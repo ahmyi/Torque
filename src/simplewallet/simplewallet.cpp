@@ -506,6 +506,12 @@ bool simple_wallet::set_default_ring_size(const std::vector<std::string> &args/*
       fail_msg_writer() << tr("ring size must be an integer >= 3");
       return true;
     }
+
+    if(ring_size > 15){
+      fail_msg_writer() << tr("Maximum ringsize allowed is 15 since V4 hardfork.");
+      return true;
+    }
+
     if (ring_size == 0)
       ring_size = DEFAULT_MIX + 1;
 
@@ -767,6 +773,8 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("address_book", boost::bind(&simple_wallet::address_book, this, _1), tr("address_book [(add (<address> [pid <long or short payment id>])|<integrated address> [<description possibly with whitespaces>])|(delete <index>)] - Print all entries in the address book, optionally adding/deleting an entry to/from it"));
   m_cmd_binder.set_handler("save", boost::bind(&simple_wallet::save, this, _1), tr("Save wallet data"));
   m_cmd_binder.set_handler("save_watch_only", boost::bind(&simple_wallet::save_watch_only, this, _1), tr("Save a watch-only keys file"));
+  m_cmd_binder.set_handler("get_spend_proof", boost::bind(&simple_wallet::get_spend_proof, this, _1), tr("Generate a signature proving that you generated <txid> using the spend secret key"));
+  m_cmd_binder.set_handler("check_spend_proof", boost::bind(&simple_wallet::check_spend_proof, this, _1), tr("Check a signature proving that the signer generated <txid>"));
   m_cmd_binder.set_handler("viewkey", boost::bind(&simple_wallet::viewkey, this, _1), tr("Display private view key"));
   m_cmd_binder.set_handler("spendkey", boost::bind(&simple_wallet::spendkey, this, _1), tr("Display private spend key"));
   m_cmd_binder.set_handler("seed", boost::bind(&simple_wallet::seed, this, _1), tr("Display Electrum-style mnemonic seed"));
@@ -1573,7 +1581,7 @@ bool simple_wallet::new_wallet(const boost::program_options::variables_map& vm,
   crypto::secret_key recovery_val;
   try
   {
-    recovery_val = m_wallet->generate(m_wallet_file, std::move(rc.second).password(), recovery_key, recover, two_random);
+    recovery_val = m_wallet->generate(m_wallet_file, std::move(rc.second).password(), recovery_key, recover, two_random, m_restore_height);
     message_writer(console_color_white, true) << tr("Generated new wallet: ")
       << m_wallet->get_account().get_public_address_str(m_wallet->testnet());
     std::cout << tr("View key: ") << string_tools::pod_to_hex(m_wallet->get_account().get_keys().m_view_secret_key) << ENDL;
@@ -2356,8 +2364,14 @@ bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::stri
     }
     else
     {
-      fake_outs_count = ring_size - 1;
-      local_args.erase(local_args.begin());
+      if(ring_size > 15){
+        return false;
+      }
+      else
+      {
+        fake_outs_count = ring_size - 1;
+        local_args.erase(local_args.begin());
+      }
     }
   }
 
@@ -2933,8 +2947,14 @@ bool simple_wallet::sweep_main(uint64_t below, const std::vector<std::string> &a
     }
     else
     {
-      fake_outs_count = ring_size - 1;
-      local_args.erase(local_args.begin());
+      if(ring_size > 15){
+        return false;
+      }
+      else
+      {
+        fake_outs_count = ring_size - 1;
+        local_args.erase(local_args.begin());
+      }
     }
   }
 
@@ -3933,6 +3953,92 @@ bool simple_wallet::check_tx_proof(const std::vector<std::string> &args)
 
   return check_tx_key_helper(txid, address, derivation);
 }
+
+bool simple_wallet::get_spend_proof(const std::vector<std::string> &args)
+{
+  if(args.size() != 1 && args.size() != 2) {
+    fail_msg_writer() << tr("usage: get_spend_proof <txid> [<message>]");
+    return true;
+  }
+
+  if (m_wallet->watch_only())
+  {
+    fail_msg_writer() << tr("wallet is watch-only and cannot generate the proof");
+    return true;
+  }
+
+  crypto::hash txid;
+  if (!epee::string_tools::hex_to_pod(args[0], txid))
+  {
+    fail_msg_writer() << tr("failed to parse txid");
+    return true;
+  }
+
+  if (!try_connect_to_daemon())
+  {
+    fail_msg_writer() << tr("failed to connect to the daemon");
+    return true;
+  }
+
+  if (m_wallet->ask_password() && !get_and_verify_password()) { return true; }
+
+  try
+  {
+    const std::string sig_str = m_wallet->get_spend_proof(txid, args.size() == 2 ? args[1] : "");
+    const std::string filename = "monero_spend_proof";
+    if (epee::file_io_utils::save_string_to_file(filename, sig_str))
+      success_msg_writer() << tr("signature file saved to: ") << filename;
+    else
+      fail_msg_writer() << tr("failed to save signature file");
+  }
+  catch (const std::exception &e)
+  {
+    fail_msg_writer() << e.what();
+  }
+  return true;
+}
+
+//----------------------------------------------------------------------------------------------------
+bool simple_wallet::check_spend_proof(const std::vector<std::string> &args)
+{
+  if(args.size() != 2 && args.size() != 3) {
+    fail_msg_writer() << tr("usage: check_spend_proof <txid> <signature_file> [<message>]");
+    return true;
+  }
+
+  crypto::hash txid;
+  if (!epee::string_tools::hex_to_pod(args[0], txid))
+  {
+    fail_msg_writer() << tr("failed to parse txid");
+    return true;
+  }
+
+  if (!try_connect_to_daemon())
+  {
+    fail_msg_writer() << tr("failed to connect to the daemon");
+    return true;
+  }
+
+  std::string sig_str;
+  if (!epee::file_io_utils::load_file_to_string(args[1], sig_str))
+  {
+    fail_msg_writer() << tr("failed to load signature file");
+    return true;
+  }
+
+  try
+  {
+    if (m_wallet->check_spend_proof(txid, args.size() == 3 ? args[2] : "", sig_str))
+      success_msg_writer() << tr("Good signature");
+    else
+      fail_msg_writer() << tr("Bad signature");
+  }
+  catch (const std::exception& e)
+  {
+    fail_msg_writer() << e.what();
+  }
+  return true;
+}
 //----------------------------------------------------------------------------------------------------
 static std::string get_human_readable_timestamp(uint64_t ts)
 {
@@ -4296,6 +4402,12 @@ bool simple_wallet::run()
 {
   // check and display warning, but go on anyway
   try_connect_to_daemon();
+
+  uint64_t target_height = m_wallet->get_approximate_blockchain_height();
+  uint64_t refresh_from_height = m_wallet->get_refresh_from_block_height();
+  if (refresh_from_height > target_height) {
+    m_wallet->set_refresh_from_block_height(0);
+  }
 
   refresh_main(0, false);
 

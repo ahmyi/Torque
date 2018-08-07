@@ -297,7 +297,7 @@ namespace tools
      */
     crypto::secret_key generate(const std::string& wallet, const std::string& password,
       const crypto::secret_key& recovery_param = crypto::secret_key(), bool recover = false,
-      bool two_random = false);
+      bool two_random = false, uint64_t restore_height = 0);
     /*!
      * \brief Creates a wallet from a public address and a spend/view secret key pair.
      * \param  wallet_        Name of wallet file
@@ -543,7 +543,8 @@ namespace tools
     void confirm_backlog(bool always) { m_confirm_backlog = always; }
 
     bool get_tx_key(const crypto::hash &txid, crypto::secret_key &tx_key) const;
-
+    std::string get_spend_proof(const crypto::hash &txid, const std::string &message);
+    bool check_spend_proof(const crypto::hash &txid, const std::string &message, const std::string &sig_str);
    /*!
     * \brief GUI Address book get/store
     */

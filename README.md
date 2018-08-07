@@ -57,22 +57,28 @@ sources are also used for statically-linked builds because distribution
 packages often include only shared library binaries (`.so`) but not static
 library archives (`.a`).
 
-| Dep            | Min. Version  | Vendored | Debian/Ubuntu Pkg  | Arch Pkg       | Optional | Purpose        |
-| -------------- | ------------- | ---------| ------------------ | -------------- | -------- | -------------- |
-| GCC            | 4.7.3         | NO       | `build-essential`  | `base-devel`   | NO       |                |
-| CMake          | 3.0.0         | NO       | `cmake`            | `cmake`        | NO       |                |
-| pkg-config     | any           | NO       | `pkg-config`       | `base-devel`   | NO       |                |
-| Boost          | 1.58          | NO       | `libboost-all-dev` | `boost`        | NO       | C++ libraries  |
-| OpenSSL        | basically any | NO       | `libssl-dev`       | `openssl`      | NO       | sha256 sum     |
-| libunbound     | 1.4.16        | YES      | `libunbound-dev`   | `unbound`      | NO       | DNS resolver   |
-| libminiupnpc   | 2.0           | YES      | `libminiupnpc-dev` | `miniupnpc`    | YES      | NAT punching   |
-| libunwind      | any           | NO       | `libunwind8-dev`   | `libunwind`    | YES      | Stack traces   |
-| liblzma        | any           | NO       | `liblzma-dev`      | `xz`           | YES      | For libunwind  |
-| ldns           | 1.6.17        | NO       | `libldns-dev`      | `ldns`         | YES      | SSL toolkit    |
-| expat          | 1.1           | NO       | `libexpat1-dev`    | `expat`        | YES      | XML parsing    |
-| GTest          | 1.5           | YES      | `libgtest-dev`^    | `gtest`        | YES      | Test suite     |
-| Doxygen        | any           | NO       | `doxygen`          | `doxygen`      | YES      | Documentation  |
-| Graphviz       | any           | NO       | `graphviz`         | `graphviz`     | YES      | Documentation  |
+| Dep            | Min. Version  | Vendored | Debian/Ubuntu Pkg  | Arch Pkg                    | Optional | Purpose        |
+| -------------- | ------------- | ---------| ------------------ | --------------------------- | -------- | -------------- |
+| GCC            | 4.7.3         | NO       | `build-essential`  | `base-devel`                | NO       |                |
+| CMake          | 3.0.0         | NO       | `cmake`            | `cmake`                     | NO       |                |
+| pkg-config     | any           | NO       | `pkg-config`       | `base-devel`                | NO       |                |
+| Boost          | 1.58          | NO       | `libboost-all-dev` | `boost`                     | NO       | C++ libraries  |
+| OpenSSL        | basically any | NO       | `libssl-dev`       | `openssl`                   | NO       | sha256 sum     |
+| libunbound     | 1.4.16        | YES      | `libunbound-dev`   | `unbound`                   | NO       | DNS resolver   |
+| libsodium      | ?             | NO       | `libsodium-dev`    | `libsodium-devel`           | NO       | libsodium      |
+| libzmq         | 3.0.0         | NO       | `libzmq3-dev`      | `zeromq`                    | NO       | ZeroMQ library |
+| libminiupnpc   | 2.0           | YES      | `libminiupnpc-dev` | `miniupnpc`                 | YES      | NAT punching   |
+| libunwind      | any           | NO       | `libunwind8-dev`   | `libunwind`                 | YES      | Stack traces   |
+| liblzma        | any           | NO       | `liblzma-dev`      | `xz`                        | YES      | For libunwind  |
+| ldns           | 1.6.17        | NO       | `libldns-dev`      | `ldns`                      | YES      | SSL toolkit    |
+| expat          | 1.1           | NO       | `libexpat1-dev`    | `expat`                     | YES      | XML parsing    |
+| GTest          | 1.5           | YES      | `libgtest-dev`^    | `gtest`                     | YES      | Test suite     |
+| Doxygen        | any           | NO       | `doxygen`          | `doxygen`                   | YES      | Documentation  |
+| Graphviz       | any           | NO       | `graphviz`         | `graphviz`                  | YES      | Documentation  |
+| pcsclite       | ?             | NO       | `libpcsclite-dev`  | `pcsc-lite pcsc-lite-devel` | NO       | Ledger         |
+
+Debian / Ubuntu one liner for all dependencies  
+``` sudo apt update && sudo apt install git-core build-essential cmake pkg-config libboost-all-dev libssl-dev libzmq3-dev libunbound-dev libsodium-dev libminiupnpc-dev miniupnpc libunwind8-dev liblzma-dev libldns-dev libpgm-dev libexpat1-dev doxygen graphviz libnorm-dev libpcsclite-dev ```
 
 [^] On Debian/Ubuntu `libgtest-dev` only includes sources and headers. You must
 build the library binary manually. This can be done with the following command ```sudo apt-get install libgtest-dev && cd /usr/src/gtest && sudo cmake . && sudo make && sudo mv libg* /usr/lib/ ```
@@ -82,13 +88,58 @@ build the library binary manually. This can be done with the following command `
 Stellite uses the CMake build system and a top-level [Makefile](Makefile) that
 invokes cmake commands as needed.
 
-#### On Linux and OS X
-
 * Install the dependencies
+
+## On Linux:
+
+(Tested on Ubuntu 18.04 LTS x64, 16.04 x86, 16.10 x64, Gentoo x64 and Linux Mint 18 "Sarah" - Cinnamon x64)
+
+Install Stellite dependencies
+
+  - For Ubuntu and Mint
+
+``` sudo apt update && sudo apt install git-core build-essential cmake pkg-config libboost-all-dev libssl-dev libzmq3-dev libunbound-dev libsodium-dev libminiupnpc-dev miniupnpc libunwind8-dev liblzma-dev libldns-dev libpgm-dev libexpat1-dev doxygen graphviz libnorm-dev libpcsclite-dev ```
+
+  - For Gentoo
+
+	`sudo emerge dev-vcs/git app-arch/xz-utils app-doc/doxygen dev-cpp/gtest dev-libs/boost dev-libs/expat dev-libs/openssl dev-util/cmake media-gfx/graphviz net-dns/unbound net-libs/ldns net-libs/miniupnpc net-libs/zeromq sys-libs/libunwind`
+        
+## On OS X:
+
+1. Install or update Xcode from the AppStore
+2. Install [homebrew](http://brew.sh/) via the Terminal
+3. Install [stellite](https://github.com/stellitecoin/stellite) dependencies via the Terminal:
+
+  `brew install git`
+  
+  `brew install boost --c++11`
+
+  `brew install openssl` - to install openssl headers
+
+  `brew install pkgconfig`
+
+  `brew install cmake`
+  
+  `brew install unbound`
+
+  `brew install miniupnpc`
+
+  `brew install zeromq`
+
+  `brew install doxygen`
+
+  `brew install pcsc-lite`
+
+### On Linux and OS X:
+
+* Download the source code via Git:
+
+`git clone --recursive https://github.com/stellitecoin/Stellite.git`
+
 * Change to the root of the source code directory and build:
 
         cd Stellite
-        make
+        make release-static
 
     *Optional*: If your machine has several cores and enough memory, enable
     parallel build by running `make -j<number of threads>` instead of `make`. For
@@ -137,32 +188,32 @@ application.
 
 **Preparing the Build Environment**
 
-* Download and install the [MSYS2 installer](http://msys2.github.io), either the 64-bit or the 32-bit package, depending on your system.
+* Download and install the [MSYS2 installer](http://msys2.github.io), 64-bit package, depending on your system.
 * Open the MSYS shell via the `MSYS2 Shell` shortcut
 * Update packages using pacman:  
 
         pacman -Syuu  
 
 * Exit the MSYS shell using Alt+F4  
-* Edit the properties for the `MSYS2 Shell` shortcut changing "msys2_shell.bat" to "msys2_shell.cmd -mingw64" for 64-bit builds or "msys2_shell.cmd -mingw32" for 32-bit builds
-* Restart MSYS shell via modified shortcut and update packages again using pacman:  
+* Restart MSYS shell
 
         pacman -Syuu  
 
+* Exit the MSYS shell using Alt+F4  
 
 * Install dependencies:
 
+* Open the MingW shell via `MinGW-w64-Win64 Shell` shortcut on 64-bit Windows.
+
     To build for 64-bit Windows:
 
-        pacman -S mingw-w64-x86_64-toolchain make mingw-w64-x86_64-cmake mingw-w64-x86_64-boost
+        pacman -S git-core mingw-w64-x86_64-libpsl mingw-w64-x86_64-toolchain make mingw-w64-x86_64-cmake mingw-w64-x86_64-boost mingw-w64-x86_64-openssl mingw-w64-x86_64-zeromq mingw-w64-x86_64-libsodium mingw-w64-x86_64-miniupnpc pkg-config mingw-w64-x86_64-unbound
+  
+**Cloning**
 
-    To build for 32-bit Windows:
+* To git clone, run:
 
-        pacman -S mingw-w64-i686-toolchain make mingw-w64-i686-cmake mingw-w64-i686-boost
-
-* Open the MingW shell via `MinGW-w64-Win64 Shell` shortcut on 64-bit Windows
-  or `MinGW-w64-Win64 Shell` shortcut on 32-bit Windows. Note that if you are
-  running 64-bit Windows, you will have both 64-bit and 32-bit MinGW shells.
+        git clone --recursive https://github.com/stellitecoin/Stellite.git
 
 **Building**
 
@@ -170,18 +221,20 @@ application.
 
         make release-static-win64
 
-* If you are on a 32-bit system, run:
-
-        make release-static-win32
-
 * The resulting executables can be found in `build/release/bin`
 
+* If you see errors with boost try to install the 1.66.0-2 version of boost, specificly the required static libraries
+
+    ```
+	wget http://repo.msys2.org/mingw/x86_64/mingw-w64-x86_64-boost-1.66.0-2-any.pkg.tar.xz
+	Pacman -U mingw-w64-x86_64-boost-1.66.0-2-any.pkg.tar.xz
+	
+    ```
 ### Building Portable Statically Linked Binaries
 
 By default, in either dynamically or statically linked builds, binaries target the specific host processor on which the build happens and are not portable to other processors. Portable binaries can be built using the following targets:
 
-* ```make release-static-64``` builds binaries on Linux on x86_64 portable across POSIX systems on x86_64 processors
-* ```make release-static-32``` builds binaries on Linux on x86_64 or i686 portable across POSIX systems on i686 processors
+* ```make release-static-linux-x86_64``` builds binaries on Linux on x86_64 portable across POSIX systems on x86_64 processors
 * ```make release-static-armv8``` builds binaries on Linux portable across POSIX systems on armv8 processors
 * ```make release-static-armv7``` builds binaries on Linux portable across POSIX systems on armv7 processors
 * ```make release-static-armv6``` builds binaries on Linux portable across POSIX systems on armv6 processors

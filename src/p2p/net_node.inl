@@ -413,10 +413,12 @@ namespace nodetool
     }
     else
     {
-      full_addrs.insert("54.38.44.3:20188");
-      full_addrs.insert("85.25.35.35:20188");
+      full_addrs.insert("185.91.116.196:20188");
+      full_addrs.insert("185.91.116.136:20188");
+      full_addrs.insert("185.91.116.164:20188");
+      full_addrs.insert("62.75.160.163:20188");
       full_addrs.insert("107.191.63.92:20188");
-      full_addrs.insert("172.110.10.6:20188");
+      full_addrs.insert("51.38.235.241:20188");
     }
     return full_addrs;
   }
@@ -714,7 +716,11 @@ namespace nodetool
   template<class t_payload_net_handler>
   bool node_server<t_payload_net_handler>::send_stop_signal()
   {
-    std::list<boost::uuids::uuid> connection_ids;
+	MDEBUG("[node] sending stop signal");
+	m_net_server.send_stop_signal();
+	MDEBUG("[node] Stop signal sent"); 
+
+   std::list<boost::uuids::uuid> connection_ids;
     m_net_server.get_config_object().foreach_connection([&](const p2p_connection_context& cntxt) {
       connection_ids.push_back(cntxt.m_connection_id);
       return true;
@@ -723,8 +729,6 @@ namespace nodetool
       m_net_server.get_config_object().close(connection_id);
 
     m_payload_handler.stop();
-    m_net_server.send_stop_signal();
-    MDEBUG("[node] Stop signal sent");
     return true;
   }
   //-----------------------------------------------------------------------------------
