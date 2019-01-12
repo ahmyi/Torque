@@ -389,28 +389,7 @@ namespace nodetool
   std::set<std::string> node_server<t_payload_net_handler>::get_seed_nodes(cryptonote::network_type nettype) const
   {
     std::set<std::string> full_addrs;
-    if (nettype == cryptonote::TESTNET)
-    {
-      full_addrs.insert("127.0.0.1:30188");
-    }
-    else if (nettype == cryptonote::STAGENET)
-    {
-      full_addrs.insert("127.0.0.1:40188");
-    }
-    else if (nettype == cryptonote::FAKECHAIN)
-    {
-    }
-    else
-    {
-      full_addrs.insert("139.180.198.68:20188");
-      full_addrs.insert("66.42.43.109:20188");
-      full_addrs.insert("51.38.235.241:20188"); //Thanx micmac
-      full_addrs.insert("107.191.63.92:20188"); //Thanx micmac again
-      full_addrs.insert("109.12.36.176:20188"); //Thanx micmac again again
-      full_addrs.insert("130.193.15.191:20188"); //Thanx noreith
-      full_addrs.insert("194.59.204.194:20188"); //Thanx Gravity
-      full_addrs.insert("172.245.163.163:20188"); //Thanx Hayzam
-    }
+    full_addrs.insert("127.0.0.1:20188");
     return full_addrs;
   }
 
