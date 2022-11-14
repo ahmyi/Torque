@@ -1,4 +1,5 @@
-# Copyright (c) 2014-2017, The Monero Project
+# Copyright (c) 2014-2019, The Monero Project
+# Copyright (c) 2018-2020, The Scala Network
 #
 # All rights reserved.
 #
@@ -34,13 +35,13 @@ if (WIN32 OR STATIC)
   add_definitions(-DMINIUPNP_STATICLIB)
 endif ()
 
-function (monero_private_headers group)
+function (scala_private_headers group)
   source_group("${group}\\Private"
     FILES
       ${ARGN})
 endfunction ()
 
-function (monero_install_headers subdir)
+function (scala_install_headers subdir)
   install(
     FILES       ${ARGN}
     DESTINATION "include/${subdir}"
@@ -58,7 +59,7 @@ function (enable_stack_trace target)
   endif()
 endfunction()
 
-function (monero_add_executable name)
+function (scala_add_executable name)
   source_group("${name}"
     FILES
       ${ARGN})
@@ -77,36 +78,47 @@ function (monero_add_executable name)
   enable_stack_trace("${name}")
 endfunction ()
 
-function (monero_add_library name)
-  source_group("${name}"
-    FILES
-      ${ARGN})
+function (scala_add_library name)
+    scala_add_library_with_deps(NAME "${name}" SOURCES ${ARGN})
+endfunction()
+
+function (scala_add_library_with_deps)
+  cmake_parse_arguments(SCALA_ADD_LIBRARY "" "NAME" "DEPENDS;SOURCES" ${ARGN})
+  source_group("${SCALA_ADD_LIBRARY_NAME}" FILES ${SCALA_ADD_LIBRARY_SOURCES})
 
   # Define a ("virtual") object library and an actual library that links those
   # objects together. The virtual libraries can be arbitrarily combined to link
   # any subset of objects into one library archive. This is used for releasing
   # libwallet, which combines multiple components.
-  set(objlib obj_${name})
-  add_library(${objlib} OBJECT ${ARGN})
-  add_library("${name}" $<TARGET_OBJECTS:${objlib}>)
-  set_property(TARGET "${name}"
-    PROPERTY
-      FOLDER "libs")
+  set(objlib obj_${SCALA_ADD_LIBRARY_NAME})
+  add_library(${objlib} OBJECT ${SCALA_ADD_LIBRARY_SOURCES})
+  add_library("${SCALA_ADD_LIBRARY_NAME}" $<TARGET_OBJECTS:${objlib}>)
+  if (SCALA_ADD_LIBRARY_DEPENDS)
+    add_dependencies(${objlib} ${SCALA_ADD_LIBRARY_DEPENDS})
+  endif()
+  set_property(TARGET "${SCALA_ADD_LIBRARY_NAME}" PROPERTY FOLDER "libs")
   target_compile_definitions(${objlib}
-    PRIVATE $<TARGET_PROPERTY:${name},INTERFACE_COMPILE_DEFINITIONS>)
+    PRIVATE $<TARGET_PROPERTY:${SCALA_ADD_LIBRARY_NAME},INTERFACE_COMPILE_DEFINITIONS>)
 endfunction ()
+
+include(Version)
+scala_add_library(version SOURCES ${CMAKE_BINARY_DIR}/version.cpp DEPENDS genversion)
 
 add_subdirectory(common)
 add_subdirectory(crypto)
 add_subdirectory(ringct)
+add_subdirectory(checkpoints)
 add_subdirectory(cryptonote_basic)
 add_subdirectory(cryptonote_core)
-if(NOT IOS)
-  add_subdirectory(blockchain_db)
-endif()
+add_subdirectory(lmdb)
+add_subdirectory(multisig)
+add_subdirectory(net)
+add_subdirectory(hardforks)
+add_subdirectory(blockchain_db)
 add_subdirectory(mnemonics)
+add_subdirectory(rpc)
 if(NOT IOS)
-  add_subdirectory(rpc)
+  add_subdirectory(serialization)
 endif()
 add_subdirectory(wallet)
 if(NOT IOS)
@@ -115,15 +127,20 @@ endif()
 add_subdirectory(cryptonote_protocol)
 if(NOT IOS)
   add_subdirectory(simplewallet)
+  add_subdirectory(gen_multisig)
+  add_subdirectory(gen_ssl_cert)
   add_subdirectory(daemonizer)
   add_subdirectory(daemon)
   add_subdirectory(blockchain_utilities)
 endif()
 
-if(CMAKE_BUILD_TYPE STREQUAL Debug)
+if(BUILD_DEBUG_UTILITIES)
   add_subdirectory(debug_utilities)
 endif()
 
 if(PER_BLOCK_CHECKPOINT)
   add_subdirectory(blocks)
 endif()
+
+add_subdirectory(device)
+add_subdirectory(device_trezor)

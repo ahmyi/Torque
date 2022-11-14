@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -36,7 +37,6 @@
 #include <boost/foreach.hpp>
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
-#include "serialization/serialization.h"
 #include "serialization/binary_archive.h"
 #include "serialization/json_archive.h"
 #include "serialization/debug_archive.h"
@@ -57,7 +57,6 @@ TEST(varint, equal)
     ASSERT_TRUE (bytes > 0 && bytes <= sizeof(buf));
 
     uint64_t idx2;
-    bufptr = buf;
     std::string s(buf, bytes);
     int read = tools::read_varint(s.begin(), s.end(), idx2);
     ASSERT_EQ (read, bytes);

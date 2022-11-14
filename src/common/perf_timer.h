@@ -1,4 +1,4 @@
-// Copyright (c) 2016, The Monero Project
+// Copyright (c) 2016-2019, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -30,10 +30,8 @@
 
 #include <string>
 #include <stdio.h>
+#include <memory>
 #include "misc_log_ex.h"
-
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "perf"
 
 namespace tools
 {
@@ -41,58 +39,52 @@ namespace tools
 class PerformanceTimer;
 
 extern el::Level performance_timer_log_level;
-extern __thread std::vector<PerformanceTimer*> *performance_timers;
+
+uint64_t get_tick_count();
+uint64_t get_ticks_per_ns();
+uint64_t ticks_to_ns(uint64_t ticks);
 
 class PerformanceTimer
 {
 public:
-  PerformanceTimer(const std::string &s, uint64_t unit, el::Level l = el::Level::Debug): name(s), unit(unit), level(l), started(false)
-  {
-    ticks = epee::misc_utils::get_ns_count();
-    if (!performance_timers)
-    {
-      MLOG(level, "PERF             ----------");
-      performance_timers = new std::vector<PerformanceTimer*>();
-    }
-    else
-    {
-      PerformanceTimer *pt = performance_timers->back();
-      if (!pt->started)
-      {
-        MLOG(pt->level, "PERF           " << std::string((performance_timers->size()-1) * 2, ' ') << "  " << pt->name);
-        pt->started = true;
-      }
-    }
-    performance_timers->push_back(this);
-  }
+  PerformanceTimer(bool paused = false);
+  ~PerformanceTimer();
+  void pause();
+  void resume();
+  void reset();
+  uint64_t value() const;
+  operator uint64_t() const { return value(); }
 
-  ~PerformanceTimer()
-  {
-    performance_timers->pop_back();
-    ticks = epee::misc_utils::get_ns_count() - ticks;
-    char s[12];
-    snprintf(s, sizeof(s), "%8llu  ", (unsigned long long)ticks / (1000000000 / unit));
-    MLOG(level, "PERF " << s << std::string(performance_timers->size() * 2, ' ') << "  " << name);
-    if (performance_timers->empty())
-    {
-      delete performance_timers;
-      performance_timers = NULL;
-    }
-  }
+protected:
+  uint64_t ticks;
+  bool started;
+  bool paused;
+};
+
+class LoggingPerformanceTimer: public PerformanceTimer
+{
+public:
+  LoggingPerformanceTimer(const std::string &s, const std::string &cat, uint64_t unit, el::Level l = el::Level::Info);
+  ~LoggingPerformanceTimer();
 
 private:
   std::string name;
+  std::string cat;
   uint64_t unit;
   el::Level level;
-  uint64_t ticks;
-  bool started;
 };
 
 void set_performance_timer_log_level(el::Level level);
 
-#define PERF_TIMER_UNIT(name, unit) tools::PerformanceTimer pt_##name(#name, unit, tools::performance_timer_log_level)
-#define PERF_TIMER_UNIT_L(name, unit, l) tools::PerformanceTimer pt_##name(#name, unit, l)
-#define PERF_TIMER(name) PERF_TIMER_UNIT(name, 1000)
-#define PERF_TIMER_L(name, l) PERF_TIMER_UNIT_L(name, 1000, l)
+#define PERF_TIMER_NAME(name) pt_##name
+#define PERF_TIMER_UNIT(name, unit) tools::LoggingPerformanceTimer PERF_TIMER_NAME(name)(#name, "perf." SCALA_DEFAULT_LOG_CATEGORY, unit, tools::performance_timer_log_level)
+#define PERF_TIMER_UNIT_L(name, unit, l) tools::LoggingPerformanceTimer PERF_TIMER_NAME(name)t_##name(#name, "perf." SCALA_DEFAULT_LOG_CATEGORY, unit, l)
+#define PERF_TIMER(name) PERF_TIMER_UNIT(name, 1000000)
+#define PERF_TIMER_L(name, l) PERF_TIMER_UNIT_L(name, 1000000, l)
+#define PERF_TIMER_START_UNIT(name, unit) std::unique_ptr<tools::LoggingPerformanceTimer> PERF_TIMER_NAME(name)(new tools::LoggingPerformanceTimer(#name, "perf." SCALA_DEFAULT_LOG_CATEGORY, unit, el::Level::Info))
+#define PERF_TIMER_START(name) PERF_TIMER_START_UNIT(name, 1000000)
+#define PERF_TIMER_STOP(name) do { PERF_TIMER_NAME(name).reset(NULL); } while(0)
+#define PERF_TIMER_PAUSE(name) PERF_TIMER_NAME(name).pause()
+#define PERF_TIMER_RESUME(name) PERF_TIMER_NAME(name).resume()
 
 }

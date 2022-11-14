@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -38,7 +39,7 @@
 class test_derive_secret_key : public single_tx_test_base
 {
 public:
-  static const size_t loop_count = 1000000;
+  static const size_t loop_count = 10000;
 
   bool init()
   {

@@ -1,4 +1,5 @@
-# Copyright (c) 2014-2017, The Monero Project
+# Copyright (c) 2014-2019, The Monero Project
+# Copyright (c) 2018-2020, The Scala Network
 #
 # All rights reserved.
 #
@@ -31,6 +32,7 @@ set(performance_tests_sources
 
 set(performance_tests_headers
   check_tx_signature.h
+  check_hash.h
   cn_slow_hash.h
   construct_tx.h
   derive_public_key.h
@@ -40,7 +42,15 @@ set(performance_tests_headers
   generate_key_image.h
   generate_key_image_helper.h
   generate_keypair.h
+  signature.h
   is_out_to_acc.h
+  subaddress_expand.h
+  range_proof.h
+  bulletproof.h
+  crypto_ops.h
+  sc_reduce32.h
+  sc_check.h
+  multiexp.h
   multi_tx_test_base.h
   performance_tests.h
   performance_utils.h
@@ -51,6 +61,7 @@ add_executable(performance_tests
   ${performance_tests_headers})
 target_link_libraries(performance_tests
   PRIVATE
+    wallet
     cryptonote_core
     common
     cncrypto

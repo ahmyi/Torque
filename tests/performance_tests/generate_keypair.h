@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -45,7 +46,7 @@ public:
 
   bool test()
   {
-    cryptonote::keypair::generate();
+    cryptonote::keypair::generate(hw::get_device("default"));
     return true;
   }
 };

@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -30,10 +31,8 @@
 
 #pragma once
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "daemon"
-
-#include "common/scoped_message_writer.h"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "daemon"
 
 namespace daemonize
 {
@@ -48,9 +47,9 @@ private:
 public:
   t_protocol(
       boost::program_options::variables_map const & vm
-    , t_core & core
+    , t_core & core, bool offline = false
     )
-    : m_protocol{core.get(), nullptr}
+    : m_protocol{core.get(), nullptr, offline}
   {
     MGINFO("Initializing cryptonote protocol...");
     if (!m_protocol.init(vm))

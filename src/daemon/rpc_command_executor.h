@@ -6,7 +6,8 @@
 
 */
 
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -43,10 +44,11 @@
 #include "common/common_fwd.h"
 #include "common/rpc_client.h"
 #include "cryptonote_basic/cryptonote_basic.h"
+#include "net/net_fwd.h"
 #include "rpc/core_rpc_server.h"
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "daemon"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "daemon"
 
 namespace daemonize {
 
@@ -61,13 +63,14 @@ public:
       uint32_t ip
     , uint16_t port
     , const boost::optional<tools::login>& user
+    , const epee::net_utils::ssl_options_t& ssl_options
     , bool is_rpc = true
     , cryptonote::core_rpc_server* rpc_server = NULL
     );
 
   ~t_rpc_command_executor();
 
-  bool print_peer_list();
+  bool print_peer_list(bool white = true, bool gray = true, size_t limit = 0, bool pruned_only = false, bool publicrpc_only = false);
 
   bool print_peer_list_stats();
 
@@ -83,7 +86,7 @@ public:
 
   bool print_connections();
 
-  bool print_blockchain_info(uint64_t start_block_index, uint64_t end_block_index);
+  bool print_blockchain_info(int64_t start_block_index, uint64_t end_block_index);
 
   bool set_log_level(int8_t level);
 
@@ -91,11 +94,11 @@ public:
 
   bool print_height();
 
-  bool print_block_by_hash(crypto::hash block_hash);
+  bool print_block_by_hash(crypto::hash block_hash, bool include_hex);
 
-  bool print_block_by_height(uint64_t height);
+  bool print_block_by_height(uint64_t height, bool include_hex);
 
-  bool print_transaction(crypto::hash transaction_hash);
+  bool print_transaction(crypto::hash transaction_hash, bool include_metadata, bool include_hex, bool include_json);
 
   bool is_key_image_spent(const crypto::key_image &ki);
 
@@ -105,9 +108,11 @@ public:
 
   bool print_transaction_pool_stats();
 
-  bool start_mining(cryptonote::account_public_address address, uint64_t num_threads, bool testnet, bool do_background_mining = false, bool ignore_battery = false);
+  bool start_mining(cryptonote::account_public_address address, uint64_t num_threads, cryptonote::network_type nettype, bool do_background_mining = false, bool ignore_battery = false);
 
   bool stop_mining();
+
+  bool mining_status();
 
   bool stop_daemon();
 
@@ -119,33 +124,29 @@ public:
 
   bool get_limit_down();
 
-  bool set_limit(int limit);
+  bool set_limit(int64_t limit_down, int64_t limit_up);
 
-  bool set_limit_up(int limit);
+  bool out_peers(bool set, uint32_t limit);
 
-  bool set_limit_down(int limit);
+  bool in_peers(bool set, uint32_t limit);
 
-  bool out_peers(uint64_t limit);
-  
-  bool start_save_graph();
-  
-  bool stop_save_graph();
-  
   bool hard_fork_info(uint8_t version);
 
   bool print_bans();
 
-  bool ban(const std::string &ip, time_t seconds);
+  bool ban(const std::string &address, time_t seconds);
 
-  bool unban(const std::string &ip);
+  bool unban(const std::string &address);
+
+  bool banned(const std::string &address);
 
   bool flush_txpool(const std::string &txid);
 
-  bool output_histogram(uint64_t min_count, uint64_t max_count);
+  bool output_histogram(const std::vector<uint64_t> &amounts, uint64_t min_count, uint64_t max_count);
 
   bool print_coinbase_tx_sum(uint64_t height, uint64_t count);
 
-  bool alt_chain_info();
+  bool alt_chain_info(const std::string &tip, size_t above, uint64_t last_blocks);
 
   bool print_blockchain_dynamic_stats(uint64_t nblocks);
 
@@ -154,6 +155,25 @@ public:
   bool relay_tx(const std::string &txid);
 
   bool sync_info();
+
+  bool pop_blocks(uint64_t num_blocks);
+
+  bool prune_blockchain();
+
+  bool check_blockchain_pruning();
+
+  bool print_net_stats();
+
+  bool version();
+
+  bool set_bootstrap_daemon(
+    const std::string &address,
+    const std::string &username,
+    const std::string &password);
+
+  bool rpc_payments();
+
+  bool flush_cache(bool bad_txs, bool invalid_blocks);
 };
 
 } // namespace daemonize

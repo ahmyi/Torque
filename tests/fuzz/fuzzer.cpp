@@ -1,4 +1,4 @@
-// Copyright (c) 2017, The Monero Project
+// Copyright (c) 2017-2019, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -28,8 +28,12 @@
 
 #include <boost/program_options.hpp>
 #include "include_base_utils.h"
+#include "string_tools.h"
 #include "common/command_line.h"
+#include "common/util.h"
 #include "fuzzer.h"
+
+#ifndef OSSFUZZ
 
 #if (!defined(__clang__) || (__clang__ < 5))
 static int __AFL_LOOP(int)
@@ -42,42 +46,19 @@ static int __AFL_LOOP(int)
 }
 #endif
 
-using namespace epee;
-using namespace boost::program_options;
-
 int run_fuzzer(int argc, const char **argv, Fuzzer &fuzzer)
 {
   TRY_ENTRY();
-  string_tools::set_module_name_and_folder(argv[0]);
-
-  //set up logging options
-  mlog_configure(mlog_get_default_log_path("fuzztests.log"), true);
-  mlog_set_log("*:FATAL,logging:none");
-
-  options_description desc_options("Allowed options");
-  command_line::add_arg(desc_options, command_line::arg_help);
-
-  variables_map vm;
-  bool r = command_line::handle_error_helper(desc_options, [&]()
-  {
-    store(parse_command_line(argc, argv, desc_options), vm);
-    notify(vm);
-    return true;
-  });
-  if (!r)
-    return 1;
-
-  if (command_line::get_arg(vm, command_line::arg_help))
-  {
-    std::cout << desc_options << std::endl;
-    return 0;
-  }
 
   if (argc < 2)
   {
-    std::cout << desc_options << std::endl;
+    std::cout << "usage: " << argv[0] << " " << "<filename>" << std::endl;
     return 1;
   }
+
+#ifdef __AFL_HAVE_MANUAL_CONTROL
+  __AFL_INIT();
+#endif
 
   int ret = fuzzer.init();
   if (ret)
@@ -91,6 +72,9 @@ int run_fuzzer(int argc, const char **argv, Fuzzer &fuzzer)
       return ret;
   }
 
-  CATCH_ENTRY_L0("fuzzer_main", 1);
   return 0;
+
+  CATCH_ENTRY_L0("run_fuzzer", 1);
 }
+
+#endif

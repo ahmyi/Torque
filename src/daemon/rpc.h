@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -32,8 +33,8 @@
 
 #include "rpc/core_rpc_server.h"
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "daemon"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "daemon"
 
 namespace daemonize
 {
@@ -47,35 +48,41 @@ public:
   }
 private:
   cryptonote::core_rpc_server m_server;
+  const std::string m_description;
 public:
   t_rpc(
       boost::program_options::variables_map const & vm
     , t_core & core
     , t_p2p & p2p
+    , const bool restricted
+    , const std::string & port
+    , const std::string & description
+    , bool allow_rpc_payment
     )
-    : m_server{core.get(), p2p.get()}
+    : m_server{core.get(), p2p.get()}, m_description{description}
   {
-    MGINFO("Initializing core rpc server...");
-    if (!m_server.init(vm))
+    MGINFO("Initializing " << m_description << " RPC server...");
+
+    if (!m_server.init(vm, restricted, port, allow_rpc_payment))
     {
-      throw std::runtime_error("Failed to initialize core rpc server.");
+      throw std::runtime_error("Failed to initialize " + m_description + " RPC server.");
     }
-    MGINFO("Core rpc server initialized OK on port: " << m_server.get_binded_port());
+    MGINFO(m_description << " RPC server initialized OK on port: " << m_server.get_binded_port());
   }
 
   void run()
   {
-    MGINFO("Starting core rpc server...");
+    MGINFO("Starting " << m_description << " RPC server...");
     if (!m_server.run(2, false))
     {
-      throw std::runtime_error("Failed to start core rpc server.");
+      throw std::runtime_error("Failed to start " + m_description + " RPC server.");
     }
-    MGINFO("Core rpc server started ok");
+    MGINFO(m_description << " RPC server started ok");
   }
 
   void stop()
   {
-    MGINFO("Stopping core rpc server...");
+    MGINFO("Stopping " << m_description << " RPC server...");
     m_server.send_stop_signal();
     m_server.timed_wait_server_stop(5000);
   }
@@ -87,11 +94,11 @@ public:
 
   ~t_rpc()
   {
-    MGINFO("Deinitializing rpc server...");
+    MGINFO("Deinitializing " << m_description << " RPC server...");
     try {
       m_server.deinit();
     } catch (...) {
-      MERROR("Failed to deinitialize rpc server...");
+      MERROR("Failed to deinitialize " << m_description << " RPC server...");
     }
   }
 };

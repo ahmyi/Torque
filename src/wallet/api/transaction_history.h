@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 //
 // All rights reserved.
 //
@@ -28,10 +29,10 @@
 //
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include "wallet/wallet2_api.h"
+#include "wallet/api/wallet2_api.h"
 #include <boost/thread/shared_mutex.hpp>
 
-namespace Monero {
+namespace Scala {
 
 class WalletImpl;
 
@@ -56,5 +57,5 @@ private:
 
 }
 
-namespace Bitmonero = Monero;
+namespace Bitscala = Scala;
 

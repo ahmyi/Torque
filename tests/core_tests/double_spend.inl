@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -64,7 +65,7 @@ bool gen_double_spend_base<concrete_test>::check_block_verification_context(cons
 template<class concrete_test>
 bool gen_double_spend_base<concrete_test>::mark_last_valid_block(cryptonote::core& c, size_t /*ev_index*/, const std::vector<test_event_entry>& /*events*/)
 {
-  std::list<cryptonote::block> block_list;
+  std::vector<cryptonote::block> block_list;
   bool r = c.get_blocks(c.get_current_blockchain_height() - 1, 1, block_list);
   CHECK_AND_ASSERT_MES(r, false, "core::get_blocks failed");
   m_last_valid_block = block_list.back();
@@ -96,7 +97,7 @@ bool gen_double_spend_base<concrete_test>::check_double_spend(cryptonote::core& 
   }
   CHECK_NOT_EQ(invalid_index_value, m_invalid_block_index);
 
-  std::list<cryptonote::block> block_list;
+  std::vector<cryptonote::block> block_list;
   bool r = c.get_blocks(0, 100 + 2 * CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW, block_list);
   CHECK_TEST_CONDITION(r);
   CHECK_TEST_CONDITION(m_last_valid_block == block_list.back());
@@ -144,10 +145,10 @@ bool gen_double_spend_in_tx<txs_keeped_by_block>::generate(std::vector<test_even
   destinations.push_back(de);
 
   cryptonote::transaction tx_1;
-  if (!construct_tx(bob_account.get_keys(), sources, destinations, std::vector<uint8_t>(), tx_1, 0))
+  if (!construct_tx(bob_account.get_keys(), sources, destinations, boost::none, std::vector<uint8_t>(), tx_1, 0))
     return false;
 
-  SET_EVENT_VISITOR_SETT(events, event_visitor_settings::set_txs_keeped_by_block, txs_keeped_by_block);
+  SET_EVENT_VISITOR_SETT(events, txs_keeped_by_block ? event_visitor_settings::set_txs_keeped_by_block : 0);
   DO_CALLBACK(events, "mark_invalid_tx");
   events.push_back(tx_1);
   DO_CALLBACK(events, "mark_invalid_block");
@@ -163,7 +164,7 @@ bool gen_double_spend_in_the_same_block<txs_keeped_by_block>::generate(std::vect
   INIT_DOUBLE_SPEND_TEST();
 
   DO_CALLBACK(events, "mark_last_valid_block");
-  SET_EVENT_VISITOR_SETT(events, event_visitor_settings::set_txs_keeped_by_block, txs_keeped_by_block);
+  SET_EVENT_VISITOR_SETT(events, txs_keeped_by_block ? event_visitor_settings::set_txs_keeped_by_block : 0);
 
   MAKE_TX_LIST_START(events, txs_1, bob_account, alice_account, send_amount - TESTS_DEFAULT_FEE, blk_1);
   cryptonote::transaction tx_1 = txs_1.front();
@@ -190,7 +191,7 @@ bool gen_double_spend_in_different_blocks<txs_keeped_by_block>::generate(std::ve
   INIT_DOUBLE_SPEND_TEST();
 
   DO_CALLBACK(events, "mark_last_valid_block");
-  SET_EVENT_VISITOR_SETT(events, event_visitor_settings::set_txs_keeped_by_block, txs_keeped_by_block);
+  SET_EVENT_VISITOR_SETT(events, txs_keeped_by_block ? event_visitor_settings::set_txs_keeped_by_block : 0);
 
   // Create two identical transactions, but don't push it to events list
   MAKE_TX(events, tx_blk_2, bob_account, alice_account, send_amount - TESTS_DEFAULT_FEE, blk_1);
@@ -220,7 +221,7 @@ bool gen_double_spend_in_alt_chain_in_the_same_block<txs_keeped_by_block>::gener
 {
   INIT_DOUBLE_SPEND_TEST();
 
-  SET_EVENT_VISITOR_SETT(events, event_visitor_settings::set_txs_keeped_by_block, txs_keeped_by_block);
+  SET_EVENT_VISITOR_SETT(events, txs_keeped_by_block ? event_visitor_settings::set_txs_keeped_by_block : 0);
 
   // Main chain
   MAKE_NEXT_BLOCK(events, blk_2, blk_1r, miner_account);
@@ -255,7 +256,7 @@ bool gen_double_spend_in_alt_chain_in_different_blocks<txs_keeped_by_block>::gen
 {
   INIT_DOUBLE_SPEND_TEST();
 
-  SET_EVENT_VISITOR_SETT(events, event_visitor_settings::set_txs_keeped_by_block, txs_keeped_by_block);
+  SET_EVENT_VISITOR_SETT(events, txs_keeped_by_block ? event_visitor_settings::set_txs_keeped_by_block : 0);
 
   // Main chain
   MAKE_NEXT_BLOCK(events, blk_2, blk_1r, miner_account);

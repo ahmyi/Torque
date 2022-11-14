@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -82,7 +83,7 @@ protected:
 
 /* \struct binary_archive
  *
- * \brief the actualy binary archive type
+ * \brief the actually binary archive type
  *
  * \detailed The boolean template argument /a W is the is_saving
  * parameter for binary_archive_base.
@@ -99,7 +100,7 @@ struct binary_archive<false> : public binary_archive_base<std::istream, false>
 {
 
   explicit binary_archive(stream_type &s) : base_type(s) {
-    stream_type::streampos pos = stream_.tellg();
+    stream_type::pos_type pos = stream_.tellg();
     stream_.seekg(0, std::ios_base::end);
     eof_pos_ = stream_.tellg();
     stream_.seekg(pos);
@@ -146,7 +147,8 @@ struct binary_archive<false> : public binary_archive_base<std::istream, false>
   void serialize_uvarint(T &v)
   {
     typedef std::istreambuf_iterator<char> it;
-    tools::read_varint(it(stream_), it(), v); // XXX handle failure
+    if (tools::read_varint(it(stream_), it(), v) < 0)
+      stream_.setstate(std::ios_base::failbit);
   }
 
   void begin_array(size_t &s)

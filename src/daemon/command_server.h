@@ -9,7 +9,8 @@ Passing RPC commands:
 
 */
 
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -43,6 +44,7 @@ Passing RPC commands:
 #include "common/common_fwd.h"
 #include "console_handler.h"
 #include "daemon/command_parser_executor.h"
+#include "net/net_fwd.h"
 
 namespace daemonize {
 
@@ -57,6 +59,7 @@ public:
       uint32_t ip
     , uint16_t port
     , const boost::optional<tools::login>& login
+    , const epee::net_utils::ssl_options_t& ssl_options
     , bool is_rpc = true
     , cryptonote::core_rpc_server* rpc_server = NULL
     );
@@ -73,6 +76,7 @@ private:
   bool help(const std::vector<std::string>& args);
 
   std::string get_commands_str();
+  std::string get_command_usage(const std::vector<std::string> &args);
 };
 
 } // namespace daemonize

@@ -1,4 +1,4 @@
-// Copyright (c) 2017, The Monero Project
+// Copyright (c) 2017-2019, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -27,41 +27,16 @@
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "include_base_utils.h"
-#include "common/command_line.h"
 #include "file_io_utils.h"
-#include "cryptonote_protocol/blobdatatype.h"
+#include "cryptonote_basic/blobdatatype.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "fuzzer.h"
 
-class TransactionFuzzer: public Fuzzer
-{
-public:
-  virtual int run(const std::string &filename);
+BEGIN_INIT_SIMPLE_FUZZER()
+END_INIT_SIMPLE_FUZZER()
 
-private:
-};
-
-int TransactionFuzzer::run(const std::string &filename)
-{
-  std::string s;
-
-  if (!epee::file_io_utils::load_file_to_string(filename, s))
-  {
-    std::cout << "Error: failed to load file " << filename << std::endl;
-    return 1;
-  }
+BEGIN_SIMPLE_FUZZER()
   cryptonote::transaction tx = AUTO_VAL_INIT(tx);
-  if(!parse_and_validate_tx_from_blob(s, tx))
-  {
-    std::cout << "Error: failed to parse transaction from file  " << filename << std::endl;
-    return 1;
-  }
-  return 0;
-}
-
-int main(int argc, const char **argv)
-{
-  TransactionFuzzer fuzzer;
-  return run_fuzzer(argc, argv, fuzzer);
-}
+  parse_and_validate_tx_from_blob(std::string((const char*)buf, len), tx);
+END_SIMPLE_FUZZER()

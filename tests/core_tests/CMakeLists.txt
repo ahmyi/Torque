@@ -1,4 +1,5 @@
-# Copyright (c) 2014-2017, The Monero Project
+# Copyright (c) 2014-2019, The Monero Project
+# Copyright (c) 2018-2020, The Scala Network
 #
 # All rights reserved.
 #
@@ -36,11 +37,15 @@ set(core_tests_sources
   chaingen_main.cpp
   double_spend.cpp
   integer_overflow.cpp
+  multisig.cpp
   ring_signature_1.cpp
   transaction_tests.cpp
   tx_validation.cpp
+  tx_pool.cpp
   v2_tests.cpp
-  rct.cpp)
+  rct.cpp
+  bulletproofs.cpp
+  wallet_tools.cpp)
 
 set(core_tests_headers
   block_reward.h
@@ -52,26 +57,35 @@ set(core_tests_headers
   double_spend.h
   double_spend.inl
   integer_overflow.h
+  multisig.h
   ring_signature_1.h
+  tx_pool.h
   transaction_tests.h
   tx_validation.h
   v2_tests.h
-  rct.h)
+  rct.h
+  bulletproofs.h
+  wallet_tools.h)
 
-add_executable(coretests
+add_executable(core_tests
   ${core_tests_sources}
   ${core_tests_headers})
-target_link_libraries(coretests
+target_link_libraries(core_tests
   PRIVATE
+    multisig
     cryptonote_core
     p2p
+    version
     epee
+    device
+    wallet
     ${CMAKE_THREAD_LIBS_INIT}
     ${EXTRA_LIBRARIES})
-set_property(TARGET coretests
+enable_stack_trace(core_tests)
+set_property(TARGET core_tests
   PROPERTY
     FOLDER "tests")
 
 add_test(
-  NAME    coretests
-  COMMAND coretests --generate_and_play_test_data)
+  NAME    core_tests
+  COMMAND core_tests --generate_and_play_test_data)

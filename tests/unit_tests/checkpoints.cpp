@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -30,7 +31,7 @@
 
 #include "gtest/gtest.h"
 
-#include "cryptonote_basic/checkpoints.cpp"
+#include "checkpoints/checkpoints.cpp"
 
 using namespace cryptonote;
 

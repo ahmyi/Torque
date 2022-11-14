@@ -33,10 +33,11 @@
 #include <string>
 #include <utility>
 
+#include "memwipe.h"
 #include "string_tools.h"
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "net.http"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "net.http"
 
 namespace epee
 {
@@ -46,6 +47,7 @@ namespace net_utils
 	{
 
 		enum http_method{
+			http_method_options,
 			http_method_get,
 			http_method_post,
 			http_method_put,
@@ -115,6 +117,7 @@ namespace net_utils
 			std::string m_host;             //"Host:"
 			std::string m_cookie;			//"Cookie:"
 			std::string m_user_agent;	//"User-Agent:"
+			std::string m_origin;           //"Origin:"
 			fields_list m_etc_fields;
 
 			void clear()
@@ -128,6 +131,7 @@ namespace net_utils
 				m_host.clear();
 				m_cookie.clear();
 				m_user_agent.clear();
+				m_origin.clear();
 				m_etc_fields.clear();
 			}
 		};
@@ -155,7 +159,8 @@ namespace net_utils
 			http_request_info():m_http_method(http_method_unknown), 
 				m_http_ver_hi(0), 
 				m_http_ver_lo(0), 
-				m_have_to_block(false)
+				m_have_to_block(false),
+				m_full_request_buf_size(0)
 			{}
 
 			http_method			  m_http_method;
@@ -195,6 +200,11 @@ namespace net_utils
 			{
 				this->~http_response_info();
 				new(this) http_response_info();
+			}
+
+			void wipe()
+			{
+				memwipe(&m_body[0], m_body.size());
 			}
 		};
 	}

@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -25,6 +26,9 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+#include <boost/chrono/chrono.hpp>
+#include <boost/thread/thread.hpp>
 
 #undef UNICODE
 #undef _UNICODE
@@ -67,8 +71,9 @@ namespace {
     }
     else
     {
-      return std::string{p_error_text};
+      std::string ret{p_error_text};
       LocalFree(p_error_text);
+      return ret;
     }
   }
 

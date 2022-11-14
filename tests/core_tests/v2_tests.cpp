@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -29,7 +30,7 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include "chaingen.h"
-#include "chaingen_tests_list.h"
+#include "v2_tests.h"
 
 using namespace epee;
 using namespace crypto;
@@ -85,7 +86,6 @@ bool gen_v2_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
     tx_source_entry& src = sources.back();
 
     src.amount = blocks[0].miner_tx.vout[out_idx[out_idx_idx]].amount;
-  std::cout << "using " << print_money(src.amount) << " output at index " << out_idx[out_idx_idx] << std::endl;
     for (int m = 0; m <= mixin; ++m) {
       int idx;
       if (is_valid_decomposed_amount(src.amount))
@@ -108,7 +108,7 @@ bool gen_v2_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
   destinations.push_back(td);
 
   transaction tx;
-  bool r = construct_tx(miner_accounts[0].get_keys(), sources, destinations, std::vector<uint8_t>(), tx, 0);
+  bool r = construct_tx(miner_accounts[0].get_keys(), sources, destinations, boost::none, std::vector<uint8_t>(), tx, 0);
   CHECK_AND_ASSERT_MES(r, false, "failed to construct transaction");
   if (!valid)
     DO_CALLBACK(events, "mark_invalid_tx");

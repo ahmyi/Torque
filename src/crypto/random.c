@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -42,10 +43,15 @@ static void generate_system_random_bytes(size_t n, void *result);
 
 #include <windows.h>
 #include <wincrypt.h>
+#include <stdio.h>
 
 static void generate_system_random_bytes(size_t n, void *result) {
   HCRYPTPROV prov;
+#ifdef NDEBUG
+#define must_succeed(x) do if (!(x)) { fprintf(stderr, "Failed: " #x); _exit(1); } while (0)
+#else
 #define must_succeed(x) do if (!(x)) abort(); while (0)
+#endif
   must_succeed(CryptAcquireContext(&prov, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT | CRYPT_SILENT));
   must_succeed(CryptGenRandom(prov, (DWORD)n, result));
   must_succeed(CryptReleaseContext(prov, 0));
@@ -139,5 +145,20 @@ void generate_random_bytes_not_thread_safe(size_t n, void *result) {
       result = padd(result, HASH_DATA_AREA);
       n -= HASH_DATA_AREA;
     }
+  }
+}
+
+void add_extra_entropy_not_thread_safe(const void *ptr, size_t bytes)
+{
+  size_t i;
+
+  while (bytes > 0)
+  {
+    hash_permutation(&state);
+    const size_t round_bytes = bytes > HASH_DATA_AREA ? HASH_DATA_AREA : bytes;
+    for (i = 0; i < round_bytes; ++i)
+      state.b[i] ^= ((const uint8_t*)ptr)[i];
+    bytes -= round_bytes;
+    ptr = cpadd(ptr, round_bytes);
   }
 }

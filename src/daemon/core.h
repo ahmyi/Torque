@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -28,13 +29,13 @@
 
 #pragma once
 
+#include "blocks/blocks.h"
 #include "cryptonote_core/cryptonote_core.h"
 #include "cryptonote_protocol/cryptonote_protocol_handler.h"
 #include "misc_log_ex.h"
-#include "daemon/command_line_args.h"
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "daemon"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "daemon"
 
 namespace daemonize
 {
@@ -59,6 +60,18 @@ public:
     : m_core{nullptr}
     , m_vm_HACK{vm}
   {
+    //initialize core here
+    MGINFO("Initializing core...");
+#if defined(PER_BLOCK_CHECKPOINT)
+    const cryptonote::GetCheckpointsCallback& get_checkpoints = blocks::GetCheckpointsData;
+#else
+    const cryptonote::GetCheckpointsCallback& get_checkpoints = nullptr;
+#endif
+    if (!m_core.init(m_vm_HACK, nullptr, get_checkpoints))
+    {
+      throw std::runtime_error("Failed to initialize core");
+    }
+    MGINFO("Core initialized OK");
   }
 
   // TODO - get rid of circular dependencies in internals
@@ -69,13 +82,6 @@ public:
 
   bool run()
   {
-    //initialize core here
-    MGINFO("Initializing core...");
-    if (!m_core.init(m_vm_HACK))
-    {
-      return false;
-    }
-    MGINFO("Core initialized OK");
     return true;
   }
 

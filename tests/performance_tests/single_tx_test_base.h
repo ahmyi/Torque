@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -47,6 +48,7 @@ public:
       return false;
 
     m_tx_pub_key = get_tx_pub_key_from_extra(m_tx);
+    m_additional_tx_pub_keys = get_additional_tx_pub_keys_from_extra(m_tx);
     return true;
   }
 
@@ -54,4 +56,5 @@ protected:
   cryptonote::account_base m_bob;
   cryptonote::transaction m_tx;
   crypto::public_key m_tx_pub_key;
+  std::vector<crypto::public_key> m_additional_tx_pub_keys;
 };

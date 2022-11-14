@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -29,7 +30,8 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include "chaingen.h"
-#include "chaingen_tests_list.h"
+#include "tx_validation.h"
+#include "device/device.hpp"
 
 using namespace epee;
 using namespace crypto;
@@ -48,7 +50,7 @@ namespace
       m_tx.version = version;
       m_tx.unlock_time = unlock_time;
 
-      m_tx_key = keypair::generate();
+      m_tx_key = keypair::generate(hw::get_device("default"));
       add_tx_pub_key_to_extra(m_tx, m_tx_key.pub);
     }
 
@@ -59,7 +61,10 @@ namespace
         m_in_contexts.push_back(keypair());
         keypair& in_ephemeral = m_in_contexts.back();
         crypto::key_image img;
-        generate_key_image_helper(sender_account_keys, src_entr.real_out_tx_key, src_entr.real_output_in_tx_index, in_ephemeral, img);
+        std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
+        subaddresses[sender_account_keys.m_account_address.m_spend_public_key] = {0,0};
+        auto& out_key = reinterpret_cast<const crypto::public_key&>(src_entr.outputs[src_entr.real_output].second.dest);
+        generate_key_image_helper(sender_account_keys, subaddresses, out_key, src_entr.real_out_tx_key, src_entr.real_out_additional_tx_keys, src_entr.real_output_in_tx_index, in_ephemeral, img, hw::get_device(("default")));
 
         // put key image into tx input
         txin_to_key input_to_key;
@@ -514,7 +519,7 @@ bool gen_tx_key_image_not_derive_from_tx_key::generate(std::vector<test_event_en
   builder.step2_fill_inputs(miner_account.get_keys(), sources);
 
   txin_to_key& in_to_key = boost::get<txin_to_key>(builder.m_tx.vin.front());
-  keypair kp = keypair::generate();
+  keypair kp = keypair::generate(hw::get_device("default"));
   key_image another_ki;
   crypto::generate_key_image(kp.pub, kp.sec, another_ki);
   in_to_key.k_image = another_ki;
@@ -525,7 +530,7 @@ bool gen_tx_key_image_not_derive_from_tx_key::generate(std::vector<test_event_en
   // Tx with invalid key image can't be subscribed, so create empty signature
   builder.m_tx.signatures.resize(1);
   builder.m_tx.signatures[0].resize(1);
-  builder.m_tx.signatures[0][0] = boost::value_initialized<crypto::signature>();
+  builder.m_tx.signatures[0][0] = crypto::signature{};
 
   DO_CALLBACK(events, "mark_invalid_tx");
   events.push_back(builder.m_tx);
@@ -558,7 +563,7 @@ bool gen_tx_key_image_is_invalid::generate(std::vector<test_event_entry>& events
   // Tx with invalid key image can't be subscribed, so create empty signature
   builder.m_tx.signatures.resize(1);
   builder.m_tx.signatures[0].resize(1);
-  builder.m_tx.signatures[0][0] = boost::value_initialized<crypto::signature>();
+  builder.m_tx.signatures[0][0] = crypto::signature{};
 
   DO_CALLBACK(events, "mark_invalid_tx");
   events.push_back(builder.m_tx);

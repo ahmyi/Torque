@@ -28,8 +28,10 @@
 
 #pragma once 
 
+#include "pragma_comp_defs.h"
 #include "misc_language.h"
 #include "portable_storage_base.h"
+#include "portable_storage_bin_utils.h"
 
 namespace epee
 {
@@ -39,14 +41,18 @@ namespace epee
     template<class pack_value, class t_stream>
     size_t pack_varint_t(t_stream& strm, uint8_t type_or, size_t& pv)
     {
-      pack_value v = (*((pack_value*)&pv)) << 2;
+      pack_value v = pv << 2;
       v |= type_or;
+      v = CONVERT_POD(v);
       strm.write((const char*)&v, sizeof(pack_value));
       return sizeof(pack_value);
     }
 
     PRAGMA_WARNING_PUSH
       PRAGMA_GCC("GCC diagnostic ignored \"-Wstrict-aliasing\"")
+#ifdef __clang__
+      PRAGMA_GCC("GCC diagnostic ignored \"-Wtautological-constant-out-of-range-compare\"")
+#endif
       template<class t_stream>
     size_t pack_varint(t_stream& strm, size_t val)
     {   //the first two bits always reserved for size information
@@ -89,8 +95,11 @@ namespace epee
         uint8_t type = contained_type|SERIALIZE_FLAG_ARRAY;
         m_strm.write((const char*)&type, 1);
         pack_varint(m_strm, arr_pod.m_array.size());
-        for(const t_pod_type& x: arr_pod.m_array)
+        for(t_pod_type x: arr_pod.m_array)
+        {
+          x = CONVERT_POD(x);
           m_strm.write((const char*)&x, sizeof(t_pod_type));
+        }
         return true;
       }
 
@@ -143,7 +152,8 @@ namespace epee
       bool pack_pod_type(uint8_t type, const pod_type& v)
       {
         m_strm.write((const char*)&type, 1);
-        m_strm.write((const char*)&v, sizeof(pod_type));
+        pod_type v0 = CONVERT_POD(v);
+        m_strm.write((const char*)&v0, sizeof(pod_type));
         return true;
       }
       //section, array_entry

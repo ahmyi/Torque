@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 //
 // All rights reserved.
 //
@@ -36,6 +37,5 @@ namespace tools
   struct login;
   class password_container;
   class t_http_connection;
-  class task_region;
-  class thread_group;
+  class threadpool;
 }

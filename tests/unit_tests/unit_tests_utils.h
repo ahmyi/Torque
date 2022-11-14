@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -31,9 +32,12 @@
 #pragma once
 
 #include <atomic>
+#include <boost/filesystem.hpp>
 
 namespace unit_test
 {
+  extern boost::filesystem::path data_dir;
+
   class call_counter
   {
   public:
@@ -62,3 +66,10 @@ namespace unit_test
     std::atomic<size_t> m_counter;
   };
 }
+
+# define ASSERT_EQ_MAP(val, map, key) \
+  do { \
+    auto found = map.find(key); \
+    ASSERT_TRUE(found != map.end()); \
+    ASSERT_EQ(val, found->second); \
+  } while (false)

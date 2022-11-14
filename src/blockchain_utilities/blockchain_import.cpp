@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 //
 // All rights reserved.
 //
@@ -32,18 +33,20 @@
 #include <fstream>
 
 #include <boost/filesystem.hpp>
+#include <boost/algorithm/string.hpp>
+#include <unistd.h>
 #include "misc_log_ex.h"
 #include "bootstrap_file.h"
 #include "bootstrap_serialization.h"
+#include "blocks/blocks.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "serialization/binary_utils.h" // dump_binary(), parse_binary()
 #include "serialization/json_utils.h" // dump_json()
 #include "include_base_utils.h"
-#include "blockchain_db/db_types.h"
 #include "cryptonote_core/cryptonote_core.h"
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "bcutil"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "bcutil"
 
 namespace
 {
@@ -52,6 +55,7 @@ bool opt_batch   = true;
 bool opt_verify  = true; // use add_new_block, which does verification before calling add_block
 bool opt_resume  = true;
 bool opt_testnet = true;
+bool opt_stagenet = true;
 
 // number of blocks per batch transaction
 // adjustable through command-line argument according to available RAM
@@ -89,44 +93,6 @@ int get_db_flags_from_mode(const std::string& db_mode)
   return db_flags;
 }
 
-int parse_db_arguments(const std::string& db_arg_str, std::string& db_type, int& db_flags)
-{
-  std::vector<std::string> db_args;
-  boost::split(db_args, db_arg_str, boost::is_any_of("#"));
-  db_type = db_args.front();
-  boost::algorithm::trim(db_type);
-
-  if (db_args.size() == 1)
-  {
-    return 0;
-  }
-  else if (db_args.size() > 2)
-  {
-    std::cerr << "unrecognized database argument format: " << db_arg_str << ENDL;
-    return 1;
-  }
-
-  std::string db_arg_str2 = db_args[1];
-  boost::split(db_args, db_arg_str2, boost::is_any_of(","));
-
-  // optionally use a composite mode instead of individual flags
-  const std::unordered_set<std::string> db_modes {"safe", "fast", "fastest"};
-  std::string db_mode;
-  if (db_args.size() == 1)
-  {
-    if (db_modes.count(db_args[0]) > 0)
-    {
-      db_mode = db_args[0];
-    }
-  }
-  if (! db_mode.empty())
-  {
-    db_flags = get_db_flags_from_mode(db_mode);
-  }
-  return 0;
-}
-
-
 int pop_blocks(cryptonote::core& core, int num_blocks)
 {
   bool use_batch = opt_batch;
@@ -162,26 +128,58 @@ int pop_blocks(cryptonote::core& core, int num_blocks)
   return num_blocks;
 }
 
-int check_flush(cryptonote::core &core, std::list<block_complete_entry> &blocks, bool force)
+int check_flush(cryptonote::core &core, std::vector<block_complete_entry> &blocks, bool force)
 {
   if (blocks.empty())
     return 0;
   if (!force && blocks.size() < db_batch_size)
     return 0;
 
-  core.prepare_handle_incoming_blocks(blocks);
+  // wait till we can verify a full HOH without extra, for speed
+  uint64_t new_height = core.get_blockchain_storage().get_db().height() + blocks.size();
+  if (!force && new_height % HASH_OF_HASHES_STEP)
+    return 0;
 
+  std::vector<crypto::hash> hashes;
+  for (const auto &b: blocks)
+  {
+    cryptonote::block block;
+    if (!parse_and_validate_block_from_blob(b.block, block))
+    {
+      MERROR("Failed to parse block: "
+          << epee::string_tools::pod_to_hex(get_blob_hash(b.block)));
+      core.cleanup_handle_incoming_blocks();
+      return 1;
+    }
+    hashes.push_back(cryptonote::get_block_hash(block));
+  }
+  core.prevalidate_block_hashes(core.get_blockchain_storage().get_db().height(), hashes, {});
+
+  std::vector<block> pblocks;
+  if (!core.prepare_handle_incoming_blocks(blocks, pblocks))
+  {
+    MERROR("Failed to prepare to add blocks");
+    return 1;
+  }
+  if (!pblocks.empty() && pblocks.size() != blocks.size())
+  {
+    MERROR("Unexpected parsed blocks size");
+    core.cleanup_handle_incoming_blocks();
+    return 1;
+  }
+
+  size_t blockidx = 0;
   for(const block_complete_entry& block_entry: blocks)
   {
     // process transactions
     for(auto& tx_blob: block_entry.txs)
     {
       tx_verification_context tvc = AUTO_VAL_INIT(tvc);
-      core.handle_incoming_tx(tx_blob, tvc, true, true, false);
+      core.handle_incoming_tx(tx_blob, tvc, relay_method::block, true);
       if(tvc.m_verifivation_failed)
       {
         MERROR("transaction verification failed, tx_id = "
-            << epee::string_tools::pod_to_hex(get_blob_hash(tx_blob)));
+            << epee::string_tools::pod_to_hex(get_blob_hash(tx_blob.blob)));
         core.cleanup_handle_incoming_blocks();
         return 1;
       }
@@ -189,9 +187,9 @@ int check_flush(cryptonote::core &core, std::list<block_complete_entry> &blocks,
 
     // process block
 
-    block_verification_context bvc = boost::value_initialized<block_verification_context>();
+    block_verification_context bvc = {};
 
-    core.handle_incoming_block(block_entry.block, bvc, false); // <--- process block
+    core.handle_incoming_block(block_entry.block, pblocks.empty() ? NULL : &pblocks[blockidx++], bvc, false); // <--- process block
 
     if(bvc.m_verifivation_failed)
     {
@@ -230,10 +228,21 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
     return false;
   }
 
+  uint64_t start_height = 1, seek_height;
+  if (opt_resume)
+    start_height = core.get_blockchain_storage().get_current_blockchain_height();
+
+  seek_height = start_height;
   BootstrapFile bootstrap;
+  std::streampos pos;
   // BootstrapFile bootstrap(import_file_path);
-  uint64_t total_source_blocks = bootstrap.count_blocks(import_file_path);
+  uint64_t total_source_blocks = bootstrap.count_blocks(import_file_path, pos, seek_height);
   MINFO("bootstrap file last block number: " << total_source_blocks-1 << " (zero-based height)  total blocks: " << total_source_blocks);
+
+  if (total_source_blocks-1 <= start_height)
+  {
+    return false;
+  }
 
   std::cout << ENDL;
   std::cout << "Preparing to read blocks..." << ENDL;
@@ -251,7 +260,8 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
   }
 
   // 4 byte magic + (currently) 1024 byte header structures
-  bootstrap.seek_to_first_chunk(import_file);
+  uint8_t major_version, minor_version;
+  bootstrap.seek_to_first_chunk(import_file, major_version, minor_version);
 
   std::string str1;
   char buffer1[1024];
@@ -259,11 +269,7 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
   block b;
   transaction tx;
   int quit = 0;
-  uint64_t bytes_read = 0;
-
-  uint64_t start_height = 1;
-  if (opt_resume)
-    start_height = core.get_blockchain_storage().get_current_blockchain_height();
+  uint64_t bytes_read;
 
   // Note that a new blockchain will start with block number 0 (total blocks: 1)
   // due to genesis block being added at initialization.
@@ -280,18 +286,35 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
 
   bool use_batch = opt_batch && !opt_verify;
 
-  if (use_batch)
-    core.get_blockchain_storage().get_db().batch_start(db_batch_size);
-
   MINFO("Reading blockchain from bootstrap file...");
   std::cout << ENDL;
 
-  std::list<block_complete_entry> blocks;
+  std::vector<block_complete_entry> blocks;
 
-  // Within the loop, we skip to start_height before we start adding.
-  // TODO: Not a bottleneck, but we can use what's done in count_blocks() and
-  // only do the chunk size reads, skipping the chunk content reads until we're
-  // at start_height.
+  // Skip to start_height before we start adding.
+  {
+    bool q2 = false;
+    import_file.seekg(pos);
+    bytes_read = bootstrap.count_bytes(import_file, start_height-seek_height, h, q2);
+    if (q2)
+    {
+      quit = 2;
+      goto quitting;
+    }
+    h = start_height;
+  }
+
+  if (use_batch)
+  {
+    uint64_t bytes, h2;
+    bool q2;
+    pos = import_file.tellg();
+    bytes = bootstrap.count_bytes(import_file, db_batch_size, h2, q2);
+    if (import_file.eof())
+      import_file.clear();
+    import_file.seekg(pos);
+    core.get_blockchain_storage().get_db().batch_start(db_batch_size, bytes);
+  }
   while (! quit)
   {
     uint32_t chunk_size;
@@ -344,16 +367,11 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
     bytes_read += chunk_size;
     MDEBUG("Total bytes read: " << bytes_read);
 
-    if (h + NUM_BLOCKS_PER_CHUNK < start_height + 1)
-    {
-      h += NUM_BLOCKS_PER_CHUNK;
-      continue;
-    }
     if (h > block_stop)
     {
       std::cout << refresh_string << "block " << h-1
         << " / " << block_stop
-        << std::flush;
+        << "\r" << std::flush;
       std::cout << ENDL << ENDL;
       MINFO("Specified block number reached - stopping.  block: " << h-1 << "  total blocks: " << h);
       quit = 1;
@@ -364,7 +382,23 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
     {
       str1.assign(buffer_block, chunk_size);
       bootstrap::block_package bp;
-      if (! ::serialization::parse_binary(str1, bp))
+      bool res;
+      if (major_version == 0)
+      {
+        bootstrap::block_package_1 bp1;
+        res = ::serialization::parse_binary(str1, bp1);
+        if (res)
+        {
+          bp.block = std::move(bp1.block);
+          bp.txs = std::move(bp1.txs);
+          bp.block_weight = bp1.block_weight;
+          bp.cumulative_difficulty = bp1.cumulative_difficulty;
+          bp.coins_generated = bp1.coins_generated;
+        }
+      }
+      else
+        res = ::serialization::parse_binary(str1, bp);
+      if (!res)
         throw std::runtime_error("Error in deserialization of chunk");
 
       int display_interval = 1000;
@@ -389,20 +423,24 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
         {
           std::cout << refresh_string << "block " << h-1
             << " / " << block_stop
-            << std::flush;
+            << "\r" << std::flush;
         }
 
         if (opt_verify)
         {
           cryptonote::blobdata block;
           cryptonote::block_to_blob(bp.block, block);
-          std::list<cryptonote::blobdata> txs;
+          std::vector<tx_blob_entry> txs;
           for (const auto &tx: bp.txs)
           {
-            txs.push_back(cryptonote::blobdata());
-            cryptonote::tx_to_blob(tx, txs.back());
+            txs.push_back({cryptonote::blobdata(), crypto::null_hash});
+            cryptonote::tx_to_blob(tx, txs.back().blob);
           }
-          blocks.push_back({block, txs});
+          block_complete_entry bce;
+          bce.pruned = false;
+          bce.block = std::move(block);
+          bce.txs = std::move(txs);
+          blocks.push_back(bce);
           int ret = check_flush(core, blocks, false);
           if (ret)
           {
@@ -412,14 +450,14 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
         }
         else
         {
-          std::vector<transaction> txs;
+          std::vector<std::pair<transaction, blobdata>> txs;
           std::vector<transaction> archived_txs;
 
           archived_txs = bp.txs;
 
           // tx number 1: coinbase tx
           // tx number 2 onwards: archived_txs
-          for (transaction tx : archived_txs)
+          for (const transaction &tx : archived_txs)
           {
             // add blocks with verification.
             // for Blockchain and blockchain_storage add_new_block().
@@ -429,20 +467,21 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
             // because add_block() calls
             // add_transaction(blk_hash, blk.miner_tx) first, and
             // then a for loop for the transactions in txs.
-            txs.push_back(tx);
+            txs.push_back(std::make_pair(tx, tx_to_blob(tx)));
           }
 
-          size_t block_size;
+          size_t block_weight;
           difficulty_type cumulative_difficulty;
           uint64_t coins_generated;
 
-          block_size = bp.block_size;
+          block_weight = bp.block_weight;
           cumulative_difficulty = bp.cumulative_difficulty;
           coins_generated = bp.coins_generated;
 
           try
           {
-            core.get_blockchain_storage().get_db().add_block(b, block_size, cumulative_difficulty, coins_generated, txs);
+            uint64_t long_term_block_weight = core.get_blockchain_storage().get_next_long_term_block_weight(block_weight);
+            core.get_blockchain_storage().get_db().add_block(std::make_pair(b, block_to_blob(b)), block_weight, long_term_block_weight, cumulative_difficulty, coins_generated, txs);
           }
           catch (const std::exception& e)
           {
@@ -456,11 +495,16 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
           {
             if ((h-1) % db_batch_size == 0)
             {
+              uint64_t bytes, h2;
+              bool q2;
               std::cout << refresh_string;
               // zero-based height
               std::cout << ENDL << "[- batch commit at height " << h-1 << " -]" << ENDL;
               core.get_blockchain_storage().get_db().batch_stop();
-              core.get_blockchain_storage().get_db().batch_start(db_batch_size);
+              pos = import_file.tellg();
+              bytes = bootstrap.count_bytes(import_file, db_batch_size, h2, q2);
+              import_file.seekg(pos);
+              core.get_blockchain_storage().get_db().batch_start(db_batch_size, bytes);
               std::cout << ENDL;
               core.get_blockchain_storage().get_db().show_stats();
             }
@@ -477,6 +521,7 @@ int import_from_file(cryptonote::core& core, const std::string& import_file_path
     }
   } // while
 
+quitting:
   import_file.close();
 
   if (opt_verify)
@@ -515,21 +560,14 @@ int main(int argc, char* argv[])
 
   epee::string_tools::set_module_name_and_folder(argv[0]);
 
-  std::string default_db_type = "lmdb";
-
-  std::string available_dbs = cryptonote::blockchain_db_types(", ");
-  available_dbs = "available: " + available_dbs;
-
   uint32_t log_level = 0;
   uint64_t num_blocks = 0;
   uint64_t block_stop = 0;
   std::string m_config_folder;
   std::string db_arg_str;
 
-  tools::sanitize_locale();
+  tools::on_startup();
 
-  boost::filesystem::path default_data_path {tools::get_default_data_dir()};
-  boost::filesystem::path default_testnet_data_path {default_data_path / "testnet"};
   std::string import_file_path;
 
   po::options_description desc_cmd_only("Command line options");
@@ -540,32 +578,20 @@ int main(int argc, char* argv[])
   const command_line::arg_descriptor<uint64_t> arg_batch_size  = {"batch-size", "", db_batch_size};
   const command_line::arg_descriptor<uint64_t> arg_pop_blocks  = {"pop-blocks", "Remove blocks from end of blockchain", num_blocks};
   const command_line::arg_descriptor<bool>        arg_drop_hf  = {"drop-hard-fork", "Drop hard fork subdbs", false};
-  const command_line::arg_descriptor<bool>     arg_testnet_on  = {
-    "testnet"
-      , "Run on testnet."
-      , false
-  };
   const command_line::arg_descriptor<bool>     arg_count_blocks = {
     "count-blocks"
       , "Count blocks in bootstrap file and exit"
       , false
   };
-  const command_line::arg_descriptor<std::string> arg_database = {
-    "database", available_dbs.c_str(), default_db_type
-  };
-  const command_line::arg_descriptor<bool> arg_verify =  {"verify",
-    "Verify blocks and transactions during import", true};
+  const command_line::arg_descriptor<bool> arg_noverify =  {"dangerous-unverified-import",
+    "Blindly trust the import file and use potentially malicious blocks and transactions during import (only enable if you exported the file yourself)", false};
   const command_line::arg_descriptor<bool> arg_batch  =  {"batch",
     "Batch transactions for faster import", true};
   const command_line::arg_descriptor<bool> arg_resume =  {"resume",
     "Resume from current height if output database already exists", true};
 
-  //command_line::add_arg(desc_cmd_sett, command_line::arg_data_dir, default_data_path.string());
-  //command_line::add_arg(desc_cmd_sett, command_line::arg_testnet_data_dir, default_testnet_data_path.string());
   command_line::add_arg(desc_cmd_sett, arg_input_file);
-  //command_line::add_arg(desc_cmd_sett, arg_testnet_on);
   command_line::add_arg(desc_cmd_sett, arg_log_level);
-  command_line::add_arg(desc_cmd_sett, arg_database);
   command_line::add_arg(desc_cmd_sett, arg_batch_size);
   command_line::add_arg(desc_cmd_sett, arg_block_stop);
 
@@ -577,7 +603,7 @@ int main(int argc, char* argv[])
   // call add_options() directly for these arguments since
   // command_line helpers support only boolean switch, not boolean argument
   desc_cmd_sett.add_options()
-    (arg_verify.name, make_semantic(arg_verify), arg_verify.description)
+    (arg_noverify.name, make_semantic(arg_noverify), arg_noverify.description)
     (arg_batch.name,  make_semantic(arg_batch),  arg_batch.description)
     (arg_resume.name, make_semantic(arg_resume), arg_resume.description)
     ;
@@ -596,7 +622,7 @@ int main(int argc, char* argv[])
   if (! r)
     return 1;
 
-  opt_verify    = command_line::get_arg(vm, arg_verify);
+  opt_verify    = !command_line::get_arg(vm, arg_noverify);
   opt_batch     = command_line::get_arg(vm, arg_batch);
   opt_resume    = command_line::get_arg(vm, arg_resume);
   block_stop    = command_line::get_arg(vm, arg_block_stop);
@@ -604,12 +630,12 @@ int main(int argc, char* argv[])
 
   if (command_line::get_arg(vm, command_line::arg_help))
   {
-    std::cout << "Monero '" << MONERO_RELEASE_NAME << "' (v" << MONERO_VERSION_FULL << ")" << ENDL << ENDL;
+    std::cout << "Scala '" << SCALA_RELEASE_NAME << "' (v" << SCALA_VERSION_FULL << ")" << ENDL << ENDL;
     std::cout << desc_options << std::endl;
     return 1;
   }
 
-  if (! opt_batch && ! vm["batch-size"].defaulted())
+  if (! opt_batch && !command_line::is_arg_defaulted(vm, arg_batch_size))
   {
     std::cerr << "Error: batch-size set, but batch option not enabled" << ENDL;
     return 1;
@@ -619,7 +645,7 @@ int main(int argc, char* argv[])
     std::cerr << "Error: batch-size must be > 0" << ENDL;
     return 1;
   }
-  if (opt_verify && vm["batch-size"].defaulted())
+  if (opt_verify && command_line::is_arg_defaulted(vm, arg_batch_size))
   {
     // usually want batch size default lower if verify on, so progress can be
     // frequently saved.
@@ -632,13 +658,17 @@ int main(int argc, char* argv[])
     }
   }
 
-  opt_testnet = command_line::get_arg(vm, arg_testnet_on);
-  auto data_dir_arg = opt_testnet ? command_line::arg_testnet_data_dir : command_line::arg_data_dir;
-  m_config_folder = command_line::get_arg(vm, data_dir_arg);
-  db_arg_str = command_line::get_arg(vm, arg_database);
+  opt_testnet = command_line::get_arg(vm, cryptonote::arg_testnet_on);
+  opt_stagenet = command_line::get_arg(vm, cryptonote::arg_stagenet_on);
+  if (opt_testnet && opt_stagenet)
+  {
+    std::cerr << "Error: Can't specify more than one of --testnet and --stagenet" << ENDL;
+    return 1;
+  }
+  m_config_folder = command_line::get_arg(vm, cryptonote::arg_data_dir);
 
-  mlog_configure(mlog_get_default_log_path("stellite-blockchain-import.log"), true);
-  if (!vm["log-level"].defaulted())
+  mlog_configure(mlog_get_default_log_path("scala-blockchain-import.log"), true);
+  if (!command_line::is_arg_defaulted(vm, arg_log_level))
     mlog_set_log(command_line::get_arg(vm, arg_log_level).c_str());
   else
     mlog_set_log(std::string(std::to_string(log_level) + ",bcutil:INFO").c_str());
@@ -661,25 +691,7 @@ int main(int argc, char* argv[])
     return 0;
   }
 
-
-  std::string db_type;
-  int db_flags = 0;
-  int res = 0;
-  res = parse_db_arguments(db_arg_str, db_type, db_flags);
-  if (res)
-  {
-    std::cerr << "Error parsing database argument(s)" << ENDL;
-    return 1;
-  }
-
-  if (!cryptonote::blockchain_valid_db_type(db_type))
-  {
-    std::cerr << "Invalid database type: " << db_type << std::endl;
-    return 1;
-  }
-
-  MINFO("database: " << db_type);
-  MINFO("database flags: " << db_flags);
+  MINFO("database: LMDB");
   MINFO("verify:  " << std::boolalpha << opt_verify << std::noboolalpha);
   if (opt_batch)
   {
@@ -691,10 +703,22 @@ int main(int argc, char* argv[])
     MINFO("batch:   " << std::boolalpha << opt_batch << std::noboolalpha);
   }
   MINFO("resume:  " << std::boolalpha << opt_resume  << std::noboolalpha);
-  MINFO("testnet: " << std::boolalpha << opt_testnet << std::noboolalpha);
+  MINFO("nettype: " << (opt_testnet ? "testnet" : opt_stagenet ? "stagenet" : "mainnet"));
 
   MINFO("bootstrap file path: " << import_file_path);
   MINFO("database path:       " << m_config_folder);
+
+  if (!opt_verify)
+  {
+    MCLOG_RED(el::Level::Warning, "global", "\n"
+      "Import is set to proceed WITHOUT VERIFICATION.\n"
+      "This is a DANGEROUS operation: if the file was tampered with in transit, or obtained from a malicious source,\n"
+      "you could end up with a compromised database. It is recommended to NOT use " << arg_noverify.name << ".\n"
+      "*****************************************************************************************\n"
+      "You have 90 seconds to press ^C or terminate this program before unverified import starts\n"
+      "*****************************************************************************************");
+    sleep(90);
+  }
 
   cryptonote::cryptonote_protocol_stub pr; //TODO: stub only for this kind of test, make real validation of relayed objects
   cryptonote::core core(&pr);
@@ -703,14 +727,19 @@ int main(int argc, char* argv[])
   {
 
   core.disable_dns_checkpoints(true);
-  if (!core.init(vm, NULL))
+#if defined(PER_BLOCK_CHECKPOINT)
+  const GetCheckpointsCallback& get_checkpoints = blocks::GetCheckpointsData;
+#else
+  const GetCheckpointsCallback& get_checkpoints = nullptr;
+#endif
+  if (!core.init(vm, nullptr, get_checkpoints))
   {
     std::cerr << "Failed to initialize core" << ENDL;
     return 1;
   }
   core.get_blockchain_storage().get_db().set_batch_transactions(true);
 
-  if (! vm["pop-blocks"].defaulted())
+  if (!command_line::is_arg_defaulted(vm, arg_pop_blocks))
   {
     num_blocks = command_line::get_arg(vm, arg_pop_blocks);
     MINFO("height: " << core.get_blockchain_storage().get_current_blockchain_height());
@@ -719,7 +748,7 @@ int main(int argc, char* argv[])
     return 0;
   }
 
-  if (! vm["drop-hard-fork"].defaulted())
+  if (!command_line::is_arg_defaulted(vm, arg_drop_hf))
   {
     MINFO("Dropping hard fork tables...");
     core.get_blockchain_storage().get_db().drop_hard_fork_info();

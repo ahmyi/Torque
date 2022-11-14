@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 // 
 // All rights reserved.
 // 
@@ -41,6 +42,8 @@
 #include "tx_validation.h"
 #include "v2_tests.h"
 #include "rct.h"
+#include "multisig.h"
+#include "bulletproofs.h"
 /************************************************************************/
 /*                                                                      */
 /************************************************************************/

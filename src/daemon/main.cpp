@@ -1,4 +1,5 @@
-// Copyright (c) 2014-2017, The Monero Project
+//Copyright (c) 2014-2019, The Monero Project
+//Copyright (c) 2018-2020, The Scala Network
 //
 // All rights reserved.
 //
@@ -39,21 +40,73 @@
 #include "daemon/executor.h"
 #include "daemonizer/daemonizer.h"
 #include "misc_log_ex.h"
+#include "net/parse.h"
 #include "p2p/net_node.h"
 #include "rpc/core_rpc_server.h"
 #include "rpc/rpc_args.h"
 #include "daemon/command_line_args.h"
-#include "blockchain_db/db_types.h"
+#include "version.h"
 
 #ifdef STACK_TRACE
 #include "common/stack_trace.h"
 #endif // STACK_TRACE
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "daemon"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "daemon"
 
 namespace po = boost::program_options;
 namespace bf = boost::filesystem;
+
+uint16_t parse_public_rpc_port(const po::variables_map &vm)
+{
+  const auto &public_node_arg = daemon_args::arg_public_node;
+  const bool public_node = command_line::get_arg(vm, public_node_arg);
+  if (!public_node)
+  {
+    return 0;
+  }
+
+  std::string rpc_port_str;
+  const auto &restricted_rpc_port = cryptonote::core_rpc_server::arg_rpc_restricted_bind_port;
+  if (!command_line::is_arg_defaulted(vm, restricted_rpc_port))
+  {
+    rpc_port_str = command_line::get_arg(vm, restricted_rpc_port);
+  }
+  else if (command_line::get_arg(vm, cryptonote::core_rpc_server::arg_restricted_rpc))
+  {
+    rpc_port_str = command_line::get_arg(vm, cryptonote::core_rpc_server::arg_rpc_bind_port);
+  }
+  else
+  {
+    throw std::runtime_error("restricted RPC mode is required");
+  }
+
+  uint16_t rpc_port;
+  if (!string_tools::get_xtype_from_string(rpc_port, rpc_port_str))
+  {
+    throw std::runtime_error("invalid RPC port " + rpc_port_str);
+  }
+
+  const auto rpc_bind_address = command_line::get_arg(vm, cryptonote::rpc_args::descriptors().rpc_bind_ip);
+  const auto address = net::get_network_address(rpc_bind_address, rpc_port);
+  if (!address) {
+    throw std::runtime_error("failed to parse RPC bind address");
+  }
+  if (address->get_zone() != epee::net_utils::zone::public_)
+  {
+    throw std::runtime_error(std::string(zone_to_string(address->get_zone()))
+      + " network zone is not supported, please check RPC server bind address");
+  }
+
+  if (address->is_loopback() || address->is_local())
+  {
+    MLOG_RED(el::Level::Warning, "--" << public_node_arg.name 
+      << " is enabled, but RPC server " << address->str() 
+      << " may be unreachable from outside, please check RPC server bind address");
+  }
+
+  return rpc_port;
+}
 
 int main(int argc, char const * argv[])
 {
@@ -61,7 +114,7 @@ int main(int argc, char const * argv[])
 
     // TODO parse the debug options like set log level right here at start
 
-    tools::sanitize_locale();
+    tools::on_startup();
 
     epee::string_tools::set_module_name_and_folder(argv[0]);
 
@@ -72,23 +125,23 @@ int main(int argc, char const * argv[])
     po::options_description core_settings("Settings");
     po::positional_options_description positional_options;
     {
-      bf::path default_data_dir = daemonizer::get_default_data_dir();
-      bf::path default_testnet_data_dir = {default_data_dir / "testnet"};
-
       // Misc Options
 
       command_line::add_arg(visible_options, command_line::arg_help);
       command_line::add_arg(visible_options, command_line::arg_version);
       command_line::add_arg(visible_options, daemon_args::arg_os_version);
-      bf::path default_conf = default_data_dir / std::string(CRYPTONOTE_NAME ".conf");
-      command_line::add_arg(visible_options, daemon_args::arg_config_file, default_conf.string());
-      command_line::add_arg(visible_options, command_line::arg_test_dbg_lock_sleep);
+      command_line::add_arg(visible_options, daemon_args::arg_config_file);
 
       // Settings
-      bf::path default_log = default_data_dir / std::string(CRYPTONOTE_NAME ".log");
-      command_line::add_arg(core_settings, daemon_args::arg_log_file, default_log.string());
+      command_line::add_arg(core_settings, daemon_args::arg_log_file);
       command_line::add_arg(core_settings, daemon_args::arg_log_level);
+      command_line::add_arg(core_settings, daemon_args::arg_max_log_file_size);
+      command_line::add_arg(core_settings, daemon_args::arg_max_log_files);
       command_line::add_arg(core_settings, daemon_args::arg_max_concurrency);
+      command_line::add_arg(core_settings, daemon_args::arg_public_node);
+      command_line::add_arg(core_settings, daemon_args::arg_zmq_rpc_bind_ip);
+      command_line::add_arg(core_settings, daemon_args::arg_zmq_rpc_bind_port);
+      command_line::add_arg(core_settings, daemon_args::arg_zmq_rpc_disabled);
 
       daemonizer::init_options(hidden_options, visible_options);
       daemonize::t_executor::init_options(core_settings);
@@ -120,16 +173,16 @@ int main(int argc, char const * argv[])
 
     if (command_line::get_arg(vm, command_line::arg_help))
     {
-      std::cout << "Stellite '" << MONERO_RELEASE_NAME << "' (v" << MONERO_VERSION_FULL << ")" << ENDL << ENDL;
+      std::cout << "Scala '" << SCALA_RELEASE_NAME << "' (v" << SCALA_VERSION_FULL << ")" << ENDL << ENDL;
       std::cout << "Usage: " + std::string{argv[0]} + " [options|settings] [daemon_command...]" << std::endl << std::endl;
       std::cout << visible_options << std::endl;
       return 0;
     }
 
-    // Monero Version
+    // Scala Version
     if (command_line::get_arg(vm, command_line::arg_version))
     {
-      std::cout << "Monero '" << MONERO_RELEASE_NAME << "' (v" << MONERO_VERSION_FULL << ")" << ENDL;
+      std::cout << "Scala '" << SCALA_RELEASE_NAME << "' (v" << SCALA_VERSION_FULL << ")" << ENDL;
       return 0;
     }
 
@@ -140,45 +193,8 @@ int main(int argc, char const * argv[])
       return 0;
     }
 
-    epee::debug::g_test_dbg_lock_sleep() = command_line::get_arg(vm, command_line::arg_test_dbg_lock_sleep);
-
-    std::string db_type = command_line::get_arg(vm, command_line::arg_db_type);
-
-    // verify that blockchaindb type is valid
-    if(!cryptonote::blockchain_valid_db_type(db_type))
-    {
-      std::cout << "Invalid database type (" << db_type << "), available types are: " <<
-        cryptonote::blockchain_db_types(", ") << std::endl;
-      return 0;
-    }
-
-    bool testnet_mode = command_line::get_arg(vm, command_line::arg_testnet_on);
-
-    auto data_dir_arg = testnet_mode ? command_line::arg_testnet_data_dir : command_line::arg_data_dir;
-
-    // data_dir
-    //   default: e.g. ~/.bitmonero/ or ~/.bitmonero/testnet
-    //   if data-dir argument given:
-    //     absolute path
-    //     relative path: relative to cwd
-
-    // Create data dir if it doesn't exist
-    boost::filesystem::path data_dir = boost::filesystem::absolute(
-        command_line::get_arg(vm, data_dir_arg));
-
-    // FIXME: not sure on windows implementation default, needs further review
-    //bf::path relative_path_base = daemonizer::get_relative_path_base(vm);
-    bf::path relative_path_base = data_dir;
-
     std::string config = command_line::get_arg(vm, daemon_args::arg_config_file);
-
-    boost::filesystem::path data_dir_path(data_dir);
     boost::filesystem::path config_path(config);
-    if (!config_path.has_parent_path())
-    {
-      config_path = data_dir / config_path;
-    }
-
     boost::system::error_code ec;
     if (bf::exists(config_path, ec))
     {
@@ -193,6 +209,35 @@ int main(int argc, char const * argv[])
         throw;
       }
     }
+    else if (!command_line::is_arg_defaulted(vm, daemon_args::arg_config_file))
+    {
+      std::cerr << "Can't find config file " << config << std::endl;
+      return 1;
+    }
+
+    const bool testnet = command_line::get_arg(vm, cryptonote::arg_testnet_on);
+    const bool stagenet = command_line::get_arg(vm, cryptonote::arg_stagenet_on);
+    const bool regtest = command_line::get_arg(vm, cryptonote::arg_regtest_on);
+    if (testnet + stagenet + regtest > 1)
+    {
+      std::cerr << "Can't specify more than one of --tesnet and --stagenet and --regtest" << ENDL;
+      return 1;
+    }
+
+    // data_dir
+    //   default: e.g. ~/.bitscala/ or ~/.bitscala/testnet
+    //   if data-dir argument given:
+    //     absolute path
+    //     relative path: relative to cwd
+
+    // Create data dir if it doesn't exist
+    boost::filesystem::path data_dir = boost::filesystem::absolute(
+        command_line::get_arg(vm, cryptonote::arg_data_dir));
+
+    // FIXME: not sure on windows implementation default, needs further review
+    //bf::path relative_path_base = daemonizer::get_relative_path_base(vm);
+    bf::path relative_path_base = data_dir;
+
     po::notify(vm);
 
     // log_file_path
@@ -201,19 +246,30 @@ int main(int argc, char const * argv[])
     //     absolute path
     //     relative path: relative to data_dir
     bf::path log_file_path {data_dir / std::string(CRYPTONOTE_NAME ".log")};
-    if (! vm["log-file"].defaulted())
+    if (!command_line::is_arg_defaulted(vm, daemon_args::arg_log_file))
       log_file_path = command_line::get_arg(vm, daemon_args::arg_log_file);
-    log_file_path = bf::absolute(log_file_path, relative_path_base);
-    mlog_configure(log_file_path.string(), true);
+    if (!log_file_path.has_parent_path())
+      log_file_path = bf::absolute(log_file_path, relative_path_base);
+    mlog_configure(log_file_path.string(), true, command_line::get_arg(vm, daemon_args::arg_max_log_file_size), command_line::get_arg(vm, daemon_args::arg_max_log_files));
 
     // Set log level
-    if (!vm["log-level"].defaulted())
+    if (!command_line::is_arg_defaulted(vm, daemon_args::arg_log_level))
     {
       mlog_set_log(command_line::get_arg(vm, daemon_args::arg_log_level).c_str());
     }
 
     // after logs initialized
     tools::create_directories_if_necessary(data_dir.string());
+
+#ifdef STACK_TRACE
+    tools::set_stack_trace_log(log_file_path.filename().string());
+#endif // STACK_TRACE
+
+    if (!command_line::is_arg_defaulted(vm, daemon_args::arg_max_concurrency))
+      tools::set_max_concurrency(command_line::get_arg(vm, daemon_args::arg_max_concurrency));
+
+    // logging is now set up
+    MGINFO("Scala '" << SCALA_RELEASE_NAME << "' (v" << SCALA_VERSION_FULL << ")");
 
     // If there are positional options, we're running a daemon command
     {
@@ -224,10 +280,6 @@ int main(int argc, char const * argv[])
         const cryptonote::rpc_args::descriptors arg{};
         auto rpc_ip_str = command_line::get_arg(vm, arg.rpc_bind_ip);
         auto rpc_port_str = command_line::get_arg(vm, cryptonote::core_rpc_server::arg_rpc_bind_port);
-        if (testnet_mode)
-        {
-          rpc_port_str = command_line::get_arg(vm, cryptonote::core_rpc_server::arg_testnet_rpc_bind_port);
-        }
 
         uint32_t rpc_ip;
         uint16_t rpc_port;
@@ -242,11 +294,17 @@ int main(int argc, char const * argv[])
           return 1;
         }
 
+        const char *env_rpc_login = nullptr;
+        const bool has_rpc_arg = command_line::has_arg(vm, arg.rpc_login);
+        const bool use_rpc_env = !has_rpc_arg && (env_rpc_login = getenv("RPC_LOGIN")) != nullptr && strlen(env_rpc_login) > 0;
         boost::optional<tools::login> login{};
-        if (command_line::has_arg(vm, arg.rpc_login))
+        if (has_rpc_arg || use_rpc_env)
         {
           login = tools::login::parse(
-            command_line::get_arg(vm, arg.rpc_login), false, "Daemon client password"
+            has_rpc_arg ? command_line::get_arg(vm, arg.rpc_login) : std::string(env_rpc_login), false, [](bool verify) {
+              PAUSE_READLINE();
+              return tools::password_container::prompt(verify, "Daemon client password");
+            }
           );
           if (!login)
           {
@@ -255,32 +313,27 @@ int main(int argc, char const * argv[])
           }
         }
 
-        daemonize::t_command_server rpc_commands{rpc_ip, rpc_port, std::move(login)};
+        auto ssl_options = cryptonote::rpc_args::process_ssl(vm, true);
+        if (!ssl_options)
+          return 1;
+
+        daemonize::t_command_server rpc_commands{rpc_ip, rpc_port, std::move(login), std::move(*ssl_options)};
         if (rpc_commands.process_command_vec(command))
         {
           return 0;
         }
         else
         {
-          std::cerr << "Unknown command" << std::endl;
+          PAUSE_READLINE();
+          std::cerr << "Unknown command: " << command.front() << std::endl;
           return 1;
         }
       }
     }
 
-#ifdef STACK_TRACE
-    tools::set_stack_trace_log(log_file_path.filename().string());
-#endif // STACK_TRACE
-
-    if (command_line::has_arg(vm, daemon_args::arg_max_concurrency))
-      tools::set_max_concurrency(command_line::get_arg(vm, daemon_args::arg_max_concurrency));
-
-    // logging is now set up
-    MGINFO("Stellite '" << MONERO_RELEASE_NAME << "' (v" << MONERO_VERSION_FULL << ")");
-
     MINFO("Moving from main() into the daemonize now.");
 
-    return daemonizer::daemonize(argc, argv, daemonize::t_executor{}, vm);
+    return daemonizer::daemonize(argc, argv, daemonize::t_executor{parse_public_rpc_port(vm)}, vm) ? 0 : 1;
   }
   catch (std::exception const & ex)
   {

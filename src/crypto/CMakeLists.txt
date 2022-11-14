@@ -1,4 +1,5 @@
-# Copyright (c) 2014-2017, The Monero Project
+# Copyright (c) 2014-2019, The Monero Project
+# Copyright (c) 2018-2020, The Scala Network
 #
 # All rights reserved.
 #
@@ -29,7 +30,7 @@
 set(crypto_sources
   aesb.c
   blake256.c
-  chacha8.c
+  chacha.c
   crypto-ops-data.c
   crypto-ops.c
   crypto.cpp
@@ -39,19 +40,28 @@ set(crypto_sources
   hash-extra-jh.c
   hash-extra-skein.c
   hash.c
+  hmac-keccak.c
   jh.c
   keccak.c
   oaes_lib.c
   random.c
   skein.c
   slow-hash.c
+  rx-slow-hash.c
+  CryptonightR_JIT.c
   tree-hash.c)
+
+if(ARCH_ID STREQUAL "i386" OR ARCH_ID STREQUAL "x86_64" OR ARCH_ID STREQUAL "x86-64" OR ARCH_ID STREQUAL "amd64")
+list(APPEND crypto_sources CryptonightR_template.S)
+endif()
+
+include_directories(${RANDOMX_INCLUDE})
 
 set(crypto_headers)
 
 set(crypto_private_headers
   blake256.h
-  chacha8.h
+  chacha.h
   crypto-ops.h
   crypto.h
   generic-ops.h
@@ -59,6 +69,7 @@ set(crypto_private_headers
   groestl_tables.h
   hash-ops.h
   hash.h
+  hmac-keccak.h
   initializer.h
   jh.h
   keccak.h
@@ -66,17 +77,22 @@ set(crypto_private_headers
   oaes_lib.h
   random.h
   skein.h
-  skein_port.h)
+  skein_port.h
+  CryptonightR_JIT.h
+  CryptonightR_template.h)
 
-monero_private_headers(cncrypto
+scala_private_headers(cncrypto
   ${crypto_private_headers})
-monero_add_library(cncrypto
+scala_add_library(cncrypto
   ${crypto_sources}
   ${crypto_headers}
   ${crypto_private_headers})
 target_link_libraries(cncrypto
   PUBLIC
+    epee
+    randomx
     ${Boost_SYSTEM_LIBRARY}
+    ${SODIUM_LIBRARY}
   PRIVATE
     ${EXTRA_LIBRARIES})
 
@@ -99,4 +115,5 @@ if (ANDROID OR IOS)
   endif()
 endif()
 
-
+# cheat because cmake and ccache hate each other
+set_property(SOURCE CryptonightR_template.S PROPERTY LANGUAGE C)

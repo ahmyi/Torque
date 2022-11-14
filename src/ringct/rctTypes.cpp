@@ -1,4 +1,4 @@
-// Copyright (c) 2016, Monero Research Labs
+// Copyright (c) 2016, Scala Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
 // 
@@ -28,12 +28,15 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "misc_log_ex.h"
+#include "cryptonote_config.h"
 #include "rctTypes.h"
+#include "int-util.h"
 using namespace crypto;
 using namespace std;
 
-#undef MONERO_DEFAULT_LOG_CATEGORY
-#define MONERO_DEFAULT_LOG_CATEGORY "ringct"
+#undef SCALA_DEFAULT_LOG_CATEGORY
+#define SCALA_DEFAULT_LOG_CATEGORY "ringct"
 
 namespace rct {
 
@@ -89,7 +92,7 @@ namespace rct {
         printf("]");
         printf("\n");
     }
-    void dp(xmr_amount vali) {
+    void dp(xla_amount vali) {
         printf("x: ");
         std::cout << vali;
         printf("\n\n");
@@ -114,53 +117,35 @@ namespace rct {
     //Various Conversions 
     
     //uint long long to 32 byte key
-    void d2h(key & amounth, const xmr_amount in) {
+    void d2h(key & amounth, const xla_amount in) {
         sc_0(amounth.bytes);
-        xmr_amount val = in;
-        int i = 0;
-        while (val != 0) {
-            amounth[i] = (unsigned char)(val & 0xFF);
-            i++;
-            val /= (xmr_amount)256;
-        }
+        memcpy_swap64le(amounth.bytes, &in, 1);
     }
     
     //uint long long to 32 byte key
-    key d2h(const xmr_amount in) {
+    key d2h(const xla_amount in) {
         key amounth;
-        sc_0(amounth.bytes);
-        xmr_amount val = in;
-        int i = 0;
-        while (val != 0) {
-            amounth[i] = (unsigned char)(val & 0xFF);
-            i++;
-            val /= (xmr_amount)256;
-        }
+        d2h(amounth, in);
         return amounth;
     }
 
     //uint long long to int[64]
-    void d2b(bits  amountb, xmr_amount val) {
+    void d2b(bits  amountb, xla_amount val) {
         int i = 0;
-        while (val != 0) {
-            amountb[i] = val & 1;
-            i++;
-            val >>= 1;
-        }
         while (i < 64) {
-            amountb[i] = 0;
-            i++;
+            amountb[i++] = val & 1;
+            val >>= 1;
         }
     }
     
     //32 byte key to uint long long
     // if the key holds a value > 2^64
     // then the value in the first 8 bytes is returned    
-    xmr_amount h2d(const key & test) {
-        xmr_amount vali = 0;
+    xla_amount h2d(const key & test) {
+        xla_amount vali = 0;
         int j = 0;
         for (j = 7; j >= 0; j--) {
-            vali = (xmr_amount)(vali * 256 + (unsigned char)test.bytes[j]);
+            vali = (xla_amount)(vali * 256 + (unsigned char)test.bytes[j]);
         }
         return vali;
     }
@@ -170,14 +155,10 @@ namespace rct {
         int val = 0, i = 0, j = 0;
         for (j = 0; j < 8; j++) {
             val = (unsigned char)test.bytes[j];
-            i = 8 * j;
-            while (val != 0) {
-                amountb2[i] = val & 1;
-                i++;
+            i = 0;
+            while (i < 8) {
+                amountb2[j*8+i++] = val & 1;
                 val >>= 1;
-            }
-            while (i < 8 * (j + 1)) {
-                amountb2[i] = 0;
             }
         }
     }
@@ -187,7 +168,6 @@ namespace rct {
         int byte, i, j;
         for (j = 0; j < 8; j++) {
             byte = 0;
-            i = 8 * j;
             for (i = 7; i > -1; i--) {
                 byte = byte * 2 + amountb2[8 * j + i];
             }
@@ -199,13 +179,101 @@ namespace rct {
     }
     
     //int[64] to uint long long
-    xmr_amount b2d(bits amountb) {
-        xmr_amount vali = 0;
+    xla_amount b2d(bits amountb) {
+        xla_amount vali = 0;
         int j = 0;
         for (j = 63; j >= 0; j--) {
-            vali = (xmr_amount)(vali * 2 + amountb[j]);
+            vali = (xla_amount)(vali * 2 + amountb[j]);
         }
         return vali;
+    }
+
+    bool is_rct_simple(int type)
+    {
+        switch (type)
+        {
+            case RCTTypeSimple:
+            case RCTTypeBulletproof:
+            case RCTTypeBulletproof2:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool is_rct_bulletproof(int type)
+    {
+        switch (type)
+        {
+            case RCTTypeBulletproof:
+            case RCTTypeBulletproof2:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool is_rct_borromean(int type)
+    {
+        switch (type)
+        {
+            case RCTTypeSimple:
+            case RCTTypeFull:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    size_t n_bulletproof_amounts(const Bulletproof &proof)
+    {
+        CHECK_AND_ASSERT_MES(proof.L.size() >= 6, 0, "Invalid bulletproof L size");
+        CHECK_AND_ASSERT_MES(proof.L.size() == proof.R.size(), 0, "Mismatched bulletproof L/R size");
+        static const size_t extra_bits = 4;
+        static_assert((1 << extra_bits) == BULLETPROOF_MAX_OUTPUTS, "log2(BULLETPROOF_MAX_OUTPUTS) is out of date");
+        CHECK_AND_ASSERT_MES(proof.L.size() <= 6 + extra_bits, 0, "Invalid bulletproof L size");
+        CHECK_AND_ASSERT_MES(proof.V.size() <= (1u<<(proof.L.size()-6)), 0, "Invalid bulletproof V/L");
+        CHECK_AND_ASSERT_MES(proof.V.size() * 2 > (1u<<(proof.L.size()-6)), 0, "Invalid bulletproof V/L");
+        CHECK_AND_ASSERT_MES(proof.V.size() > 0, 0, "Empty bulletproof");
+        return proof.V.size();
+    }
+
+    size_t n_bulletproof_amounts(const std::vector<Bulletproof> &proofs)
+    {
+        size_t n = 0;
+        for (const Bulletproof &proof: proofs)
+        {
+            size_t n2 = n_bulletproof_amounts(proof);
+            CHECK_AND_ASSERT_MES(n2 < std::numeric_limits<uint32_t>::max() - n, 0, "Invalid number of bulletproofs");
+            if (n2 == 0)
+                return 0;
+            n += n2;
+        }
+        return n;
+    }
+
+    size_t n_bulletproof_max_amounts(const Bulletproof &proof)
+    {
+        CHECK_AND_ASSERT_MES(proof.L.size() >= 6, 0, "Invalid bulletproof L size");
+        CHECK_AND_ASSERT_MES(proof.L.size() == proof.R.size(), 0, "Mismatched bulletproof L/R size");
+        static const size_t extra_bits = 4;
+        static_assert((1 << extra_bits) == BULLETPROOF_MAX_OUTPUTS, "log2(BULLETPROOF_MAX_OUTPUTS) is out of date");
+        CHECK_AND_ASSERT_MES(proof.L.size() <= 6 + extra_bits, 0, "Invalid bulletproof L size");
+        return 1 << (proof.L.size() - 6);
+    }
+
+    size_t n_bulletproof_max_amounts(const std::vector<Bulletproof> &proofs)
+    {
+        size_t n = 0;
+        for (const Bulletproof &proof: proofs)
+        {
+            size_t n2 = n_bulletproof_max_amounts(proof);
+            CHECK_AND_ASSERT_MES(n2 < std::numeric_limits<uint32_t>::max() - n, 0, "Invalid number of bulletproofs");
+            if (n2 == 0)
+                return 0;
+            n += n2;
+        }
+        return n;
     }
 
 }
